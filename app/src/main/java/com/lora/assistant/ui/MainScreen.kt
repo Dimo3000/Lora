@@ -1,6 +1,8 @@
 package com.lora.assistant.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.speech.RecognizerIntent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,6 +66,7 @@ import androidx.core.content.ContextCompat
 import com.lora.assistant.ChatMessage
 import com.lora.assistant.Phase
 import com.lora.assistant.Role
+import com.lora.assistant.SpeechController
 import com.lora.assistant.UiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,8 +78,23 @@ fun MainScreen(
     onNewConversation: () -> Unit,
     onOpenSettings: () -> Unit,
     onPermissionDenied: () -> Unit,
+    onSystemRecognitionResult: (String?) -> Unit,
+    onNoRecognizer: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Запасной путь: системное окно распознавания речи, если фонового сервиса на телефоне нет.
+    val systemRecognizer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        onSystemRecognitionResult(text)
+    }
+    LaunchedEffect(state.systemRecognizerRequest) {
+        if (state.systemRecognizerRequest == 0L) return@LaunchedEffect
+        try {
+            systemRecognizer.launch(SpeechController.recognizeIntent(state.settings.language))
+        } catch (e: ActivityNotFoundException) {
+            onNoRecognizer()
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) onMicClick() else onPermissionDenied()
     }

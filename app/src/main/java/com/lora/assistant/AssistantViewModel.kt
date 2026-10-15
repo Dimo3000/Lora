@@ -23,6 +23,8 @@ data class UiState(
     val partialText: String = "",
     val soundLevel: Float = 0f,
     val settings: AppSettings = AppSettings(),
+    /** UI должен открыть системное окно распознавания речи. */
+    val systemRecognizerRequest: Long = 0L,
 )
 
 class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechController.Listener {
@@ -73,11 +75,24 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         _state.update { it.copy(settings = store.load()) }
     }
 
+    /** Результат системного окна распознавания (null — пользователь закрыл окно). */
+    fun onSystemRecognitionResult(text: String?) {
+        if (!text.isNullOrBlank()) ask(text.trim())
+    }
+
+    fun noRecognizerAtAll() = addMessage(
+        Role.ERROR,
+        "На телефоне не нашлось распознавания речи. Установите из Google Play приложение «Google» " +
+            "или «Распознавание и синтез речи от Google» и попробуйте снова. Пока можно печатать вопросы.",
+    )
+
     fun permissionDenied() = addMessage(Role.ERROR, "Без доступа к микрофону можно только печатать вопросы.")
 
     private fun startListening() {
-        if (!speech.isRecognitionAvailable()) {
-            addMessage(Role.ERROR, "На телефоне нет сервиса распознавания речи. Установите приложение Google.")
+        if (speech.backgroundEngine() == SpeechController.Engine.NONE) {
+            // Фонового сервиса нет: просим UI открыть системное окно распознавания.
+            speech.stopSpeaking()
+            _state.update { it.copy(systemRecognizerRequest = System.nanoTime(), phase = Phase.IDLE) }
             return
         }
         _state.update { it.copy(phase = Phase.LISTENING, partialText = "", soundLevel = 0f) }

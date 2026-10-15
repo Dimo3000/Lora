@@ -55,6 +55,8 @@ class MainActivity : ComponentActivity() {
                         onNewConversation = viewModel::newConversation,
                         onOpenSettings = { showSettings = true },
                         onPermissionDenied = viewModel::permissionDenied,
+                        onSystemRecognitionResult = viewModel::onSystemRecognitionResult,
+                        onNoRecognizer = viewModel::noRecognizerAtAll,
                     )
                 }
             }

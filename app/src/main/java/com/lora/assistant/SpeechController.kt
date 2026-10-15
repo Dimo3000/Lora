@@ -2,6 +2,7 @@ package com.lora.assistant
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -54,11 +55,22 @@ class SpeechController(private val context: Context, private val listener: Liste
         })
     }
 
-    fun isRecognitionAvailable() = SpeechRecognizer.isRecognitionAvailable(context)
+    /**
+     * Через какой движок можно распознавать речь в фоне, прямо внутри приложения.
+     * NONE значит, что остаётся только системное окно распознавания (см. recognizeIntent).
+     */
+    fun backgroundEngine(): Engine = when {
+        SpeechRecognizer.isRecognitionAvailable(context) -> Engine.SERVICE
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> Engine.ON_DEVICE
+        else -> Engine.NONE
+    }
+
+    enum class Engine { SERVICE, ON_DEVICE, NONE }
 
     fun startListening(language: String) {
         stopSpeaking()
-        val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also {
+        val r = recognizer ?: createRecognizer().also {
             it.setRecognitionListener(recognitionListener)
             recognizer = it
         }
@@ -72,6 +84,13 @@ class SpeechController(private val context: Context, private val listener: Liste
         }
         r.startListening(intent)
     }
+
+    private fun createRecognizer(): SpeechRecognizer =
+        if (backgroundEngine() == Engine.ON_DEVICE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        }
 
     /** Закончить слушать и распознать то, что уже сказано. */
     fun stopListening() {
@@ -150,6 +169,15 @@ class SpeechController(private val context: Context, private val listener: Liste
         bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim()
 
     companion object {
+        /** Интент для системного окна распознавания (запасной путь, если фонового сервиса нет). */
+        fun recognizeIntent(language: String) = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, if (language.startsWith("en")) "Ask a question" else "Задайте вопрос")
+        }
+
         /** Убирает разметку, которую синтезатор прочитал бы вслух. */
         fun cleanForSpeech(text: String): String = text
             .replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1") // [текст](ссылка) -> текст
