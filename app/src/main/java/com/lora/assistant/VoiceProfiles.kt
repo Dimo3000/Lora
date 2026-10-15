@@ -34,6 +34,8 @@ class VoiceProfiles(context: Context) {
 
     fun names(): List<String> = load().keys.sorted()
 
+    fun sampleCount(name: String) = load()[name]?.size ?: 0
+
     fun add(name: String, vector: DoubleArray) {
         val map = load().toMutableMap()
         map[name] = (map[name] ?: emptyList()) + listOf(vector)
@@ -71,5 +73,6 @@ class VoiceProfiles(context: Context) {
         const val MARGIN = 0.04
         const val MIN_FRAMES = 100
         const val SAMPLES_NEEDED = 3
+        const val MAX_SAMPLES = 10
     }
 }

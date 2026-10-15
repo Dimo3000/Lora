@@ -53,17 +53,22 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     private var downloadJob: Job? = null
     private var nextId = 0L
     private val profiles = VoiceProfiles(app)
+    private val memory = Memory(app)
     private var pendingVector: DoubleArray? = null
     private var pendingFrames = 0
     private var speaker: String? = null
+    private var lastVector: DoubleArray? = null
     private var enroll: Enroll? = null
 
-    private val _state = MutableStateFlow(UiState(settings = store.load(), voices = profiles.names()))
+    private val _state = MutableStateFlow(
+        UiState(settings = store.load(), voices = profiles.names(), messages = memory.loadChat()),
+    )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private val settings get() = _state.value.settings
 
     init {
+        nextId = _state.value.messages.size.toLong()
         llm.city = settings.city
         if (llm.isDownloaded()) loadLlm()
     }
@@ -207,6 +212,10 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         askJob?.cancel()
         askJob = viewModelScope.launch {
             try {
+                memoryCommand(question)?.let { reply ->
+                    deliver(reply)
+                    return@launch
+                }
                 val kind = rich.kindOf(question)
                 if (kind == Rich.Kind.AUDIO) {
                     playMusic(question)
@@ -243,6 +252,48 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     }
 
     /** Нейросеть отвечает потоком: текст появляется на экране, а готовые предложения сразу озвучиваются. */
+    /** Команды памяти: «запомни…», «меня зовут…», «что ты помнишь», «забудь всё». null — это обычный вопрос. */
+    private fun memoryCommand(question: String): String? {
+        val q = question.trim().trimEnd('.', '!', '?')
+        val lower = q.lowercase()
+        Regex("^(?:запомни|запомните)[,:]?\\s+(?:что\\s+)?(.+)$").find(lower)?.let { m ->
+            val text = q.substring(q.length - m.groupValues[1].length)
+            memory.addFact(speaker, text)
+            llm.refreshMemory()
+            return "Запомнила."
+        }
+        Regex("^(?:меня зовут|моё имя|мое имя|зовите меня)\\s+([\\p{L}-]+)").find(lower)?.let { m ->
+            val name = q.substring(m.groups[1]!!.range.first, m.groups[1]!!.range.last + 1)
+                .replaceFirstChar { it.uppercase() }
+            memory.addFact(null, "Собеседника зовут $name")
+            llm.refreshMemory()
+            val vector = lastVector
+            return if (vector != null) {
+                profiles.add(name, vector)
+                speaker = name
+                _state.update { it.copy(voices = profiles.names()) }
+                "Приятно познакомиться, $name! Запомнила ваше имя и голос. Чем чаще мы говорим, тем лучше я вас узнаю."
+            } else {
+                speaker = name
+                "Приятно познакомиться, $name! Запомнила ваше имя."
+            }
+        }
+        if (Regex("^(?:что ты (?:обо мне )?помнишь|что ты знаешь обо мне|что ты запомнила)").containsMatchIn(lower)) {
+            val facts = memory.facts()
+            return if (facts.isEmpty()) "Пока ничего особенного. Скажите «запомни…», и я запомню."
+            else "Вот что я помню. " + facts.joinToString(" ") { (it.owner?.let { o -> "$o: " } ?: "") + it.text.trimEnd('.') + "." }
+        }
+        if (Regex("^(?:забудь всё|забудь все|очисти память)").containsMatchIn(lower)) {
+            memory.clearFacts()
+            memory.clearChat()
+            llm.resetConversation()
+            _state.update { it.copy(messages = emptyList()) }
+            speaker = null
+            return "Всё забыла. Голоса семьи остались, их можно удалить в настройках."
+        }
+        return null
+    }
+
     /** Без нейросети обращаемся по имени в ответ на приветствие. */
     private fun greetByName(question: String, answer: String): String {
         val name = speaker ?: return answer
@@ -350,6 +401,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     /** Ход закончен: возвращаемся в ожидание имени или в покой. */
     private fun finishTurn() {
         setPhase(Phase.IDLE)
+        memory.saveChat(_state.value.messages)
         if (enroll != null) {
             startListening()
             return
@@ -395,11 +447,15 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     override fun onFinalResult(text: String) {
         val vector = pendingVector?.takeIf { pendingFrames >= VoiceProfiles.MIN_FRAMES }
         pendingVector = null
+        lastVector = vector
         if (enroll != null) {
             handleEnrollment(vector)
             return
         }
         speaker = vector?.let { profiles.identify(it) } ?: speaker.takeIf { vector == null }
+        // Лора «обучается»: уверенно узнанный голос пополняет отпечатки этого человека, и узнавание улучшается.
+        val known = speaker
+        if (vector != null && known != null && profiles.sampleCount(known) < VoiceProfiles.MAX_SAMPLES) profiles.add(known, vector)
         ask(text)
     }
 

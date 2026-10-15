@@ -55,7 +55,8 @@ class LocalLlm(private val context: Context) {
     private var conversation: Conversation? = null
 
     /** Наша копия диалога: нужна, чтобы пересоздать разговор, когда он станет слишком длинным. */
-    private val history = mutableListOf<Pair<Boolean, String>>() // (это реплика пользователя?, текст)
+    private val memory = Memory(context)
+    private val history = memory.loadHistory().toMutableList() // (это реплика пользователя?, текст)
 
     fun isDownloaded() = modelFile.exists()
 
@@ -126,7 +127,7 @@ class LocalLlm(private val context: Context) {
         )
         e.initialize()
         engine = e
-        conversation = newConversation(emptyList())
+        conversation = newConversation(history.map(::toMessage))
     }
 
     /** Отвечает потоком кусочков текста. Контекст разговора сохраняется между вопросами. */
@@ -152,10 +153,19 @@ class LocalLlm(private val context: Context) {
         }
         history += true to userText
         history += false to answer.toString()
+        memory.saveHistory(history)
     }.flowOn(Dispatchers.Default)
+
+    /** Пересоздаёт разговор (например, после нового факта в памяти), сохранив историю. */
+    fun refreshMemory() {
+        if (engine == null) return
+        conversation?.close()
+        conversation = newConversation(history.map(::toMessage))
+    }
 
     fun resetConversation() {
         history.clear()
+        memory.saveHistory(history)
         conversation?.close()
         conversation = engine?.let { newConversation(emptyList()) }
     }
@@ -190,6 +200,7 @@ class LocalLlm(private val context: Context) {
         Отвечай на языке собеседника. Если чего-то не знаешь, честно скажи об этом, не выдумывай.
         Сама ты не ходишь в интернет: когда нужны свежие данные, приложение даёт тебе результаты поиска, и ты опираешься на них, а не на память.
         Сегодня ${LocalDate.now()}.${if (city.isNotBlank()) " Город собеседника: $city." else ""}
+        ${memory.factsForPrompt()}
     """.trimIndent()
 
     companion object {
