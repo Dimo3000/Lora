@@ -12,8 +12,8 @@ android {
         applicationId = "com.lora.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
 
         // Нативные библиотеки (распознавание, голос, нейросеть) собраны только под современные 64-битные ARM-телефоны.
         ndk {

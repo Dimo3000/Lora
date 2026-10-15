@@ -130,7 +130,7 @@ class LocalLlm(private val context: Context) {
     }
 
     /** Отвечает потоком кусочков текста. Контекст разговора сохраняется между вопросами. */
-    fun chat(userText: String): Flow<String> = flow {
+    fun chat(userText: String, webContext: String? = null): Flow<String> = flow {
         if (engine == null) throw IOException("Нейросеть ещё не загружена.")
         if (history.sumOf { it.second.length } > MAX_HISTORY_CHARS) {
             // Разговор стал длинным: начинаем заново, оставив только последние реплики.
@@ -142,7 +142,9 @@ class LocalLlm(private val context: Context) {
         }
         val conv = conversation ?: newConversation(history.map(::toMessage)).also { conversation = it }
         val answer = StringBuilder()
-        conv.sendMessageAsync(userText).collect { chunk ->
+        val prompt = if (webContext == null) userText else
+            "$webContext\nИспользуй эти данные, если они подходят. Для подборки назови 3–5 вариантов с короткими пояснениями простыми предложениями, без списков и ссылок.\n\nВопрос: $userText"
+        conv.sendMessageAsync(prompt).collect { chunk ->
             val text = chunk.toString()
             answer.append(text)
             emit(text)
@@ -185,7 +187,7 @@ class LocalLlm(private val context: Context) {
         - числа и единицы пиши так, чтобы их легко произнести вслух.
         Поддерживай разговор на любую тему, помни, о чём говорили раньше, при уместности задавай встречный вопрос.
         Отвечай на языке собеседника. Если чего-то не знаешь, честно скажи об этом, не выдумывай.
-        У тебя нет доступа к интернету в этом диалоге: за свежими данными (погода, курсы, новости) приложение обращается само.
+        Сама ты не ходишь в интернет: когда нужны свежие данные, приложение даёт тебе результаты поиска, и ты опираешься на них, а не на память.
         Сегодня ${LocalDate.now()}.${if (city.isNotBlank()) " Город собеседника: $city." else ""}
     """.trimIndent()
 

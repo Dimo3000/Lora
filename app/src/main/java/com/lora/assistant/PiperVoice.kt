@@ -51,6 +51,8 @@ class PiperVoice(private val context: Context) {
                             model = onnx.absolutePath,
                             tokens = File(dir, "tokens.txt").absolutePath,
                             dataDir = File(dir, "espeak-ng-data").absolutePath,
+                            noiseScale = 0.75f,
+                            lengthScale = 1.08f,
                         ),
                         numThreads = 2,
                         debug = false,

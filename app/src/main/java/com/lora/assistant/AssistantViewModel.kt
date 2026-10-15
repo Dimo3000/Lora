@@ -220,6 +220,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
 
     /** Нейросеть отвечает потоком: текст появляется на экране, а готовые предложения сразу озвучиваются. */
     private suspend fun chatWithLlm(question: String) {
+        val web = if (answerer.needsWeb(question)) runCatching { answerer.webContext(question) }.getOrNull() else null
         val id = nextId++
         var shown = ""
         _state.update { it.copy(messages = it.messages + ChatMessage(id, Role.ASSISTANT, "…")) }
@@ -249,7 +250,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         }
 
         try {
-            llm.chat(question).collect { chunk ->
+            llm.chat(question, web).collect { chunk ->
                 shown += chunk
                 pending.append(chunk)
                 _state.update { st ->

@@ -30,6 +30,45 @@ class Answerer(
         .readTimeout(20, TimeUnit.SECONDS)
         .build(),
 ) {
+    private val web = WebSearch()
+
+    /** Нужен ли вопросу поиск в интернете (подборки, фильмы, рецепты, свежие факты). */
+    fun needsWeb(question: String): Boolean {
+        val q = question.lowercase(Locale.ROOT).trim()
+        if (q.containsAny("как дела", "как ты", "как тебя", "что делаешь", "как поживаешь", "как настроение")) return false
+        if (q.containsAny("подборк", "посоветуй", "порекомендуй", "посоветовать", "найди", "поищи", "найти", "что посмотреть",
+                "какой фильм", "фильм", "сериал", "мультфильм", "книг", "рецепт", "приготовить", "топ ", "лучшие", "лучший", "афиш",
+                "куда сходить", "где купить", "сколько стоит", "отзыв", "музык", "песн", "расписание", "рейтинг",
+                "recommend", "find me", "best ", "top ", "movie", "recipe")) return true
+        val words = q.split(" ").size
+        return words >= 3 && listOf("кто ", "когда ", "где ", "сколько ", "почему ", "зачем ", "какой ", "какая ", "какие ", "что такое ")
+            .any { q.startsWith(it) }
+    }
+
+    /** Результаты поиска, оформленные как справка для нейросети. null — ничего не нашлось. */
+    suspend fun webContext(question: String): String? = withContext(Dispatchers.IO) {
+        val hits = web.search(cleanQuestion(question).ifBlank { question }, 5)
+        if (hits.isEmpty()) return@withContext null
+        val q = question.lowercase(Locale.ROOT)
+        val list = q.containsAny("подборк", "посоветуй", "порекомендуй", "что посмотреть", "лучшие", "топ ", "фильм", "сериал", "рецепт", "книг")
+        val sb = StringBuilder("Результаты поиска в интернете по запросу человека:\n")
+        hits.forEachIndexed { i, h -> sb.append("${i + 1}. ${h.title}. ${h.snippet}\n") }
+        if (list) {
+            hits.take(2).forEach { h -> web.pageText(h.url, 1800)?.let { sb.append("\nТекст страницы «${h.title}»: $it\n") } }
+        }
+        sb.toString()
+    }
+
+    /** Ответ по результатам поиска без нейросети: читаем самые подходящие находки. */
+    private fun webDigest(question: String, en: Boolean): String? {
+        val hits = web.search(cleanQuestion(question).ifBlank { question }, 4)
+        if (hits.isEmpty()) return null
+        val intro = if (en) "Here is what I found:" else "Вот что нашла:"
+        return intro + "\n" + hits.joinToString("\n") { h ->
+            if (h.snippet.isBlank()) "${h.title}." else "${h.title}. ${h.snippet.take(160)}"
+        }
+    }
+
     /** Город из последнего вопроса о погоде, чтобы работало «а завтра?». */
     private var lastCity: String? = null
 
@@ -40,7 +79,9 @@ class Answerer(
             val q = question.lowercase(Locale.ROOT).trim()
             smallTalk(q, en)?.let { return@withContext it }
             try {
-                liveAnswer(question, q, en, defaultCity) ?: facts(question, en)
+                liveAnswer(question, q, en, defaultCity)
+                    ?: (if (needsWeb(question) && !q.startsWith("что такое") && !q.startsWith("кто такой")) webDigest(question, en) else null)
+                    ?: facts(question, en)
             } catch (e: IOException) {
                 throw AnswerException(if (en) "No internet connection." else "Нет связи с интернетом.")
             }
@@ -67,6 +108,8 @@ class Answerer(
             weather(q, en, defaultCity)
         q.containsAny("курс доллар", "курс евро", "курс юан", "курс валют", "курс фунт", "сколько стоит доллар",
             "сколько стоит евро", "exchange rate", "dollar rate", "euro rate") -> currency(q, en)
+        q.containsAny("анекдот", "расскажи шутк", "пошути", "рассмеши", "tell me a joke") ->
+            web.joke() ?: throw AnswerException(if (en) "I couldn't find a joke." else "Анекдот найти не получилось.")
         q.containsAny("новост", "news") -> news(q, en)
         q.containsAny("который час", "сколько времени", "what time", "время сейчас", "сколько сейчас времени") -> time(en)
         q.containsAny("какое сегодня число", "какой сегодня день", "какое число", "какая дата",
