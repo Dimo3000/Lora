@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,7 +20,16 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk Lora.apk
       - uses: actions/upload-artifact@v4
         with:
           name: lora-assistant-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: Lora.apk
+      # Публикуем APK как релиз «latest», чтобы его можно было скачать прямо с телефона без входа в GitHub.
+      - name: Publish latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest Lora.apk --title "Лора (последняя сборка)" --notes "Сборка из коммита ${GITHUB_SHA::7}. Скачайте Lora.apk и установите на телефон." --target "$GITHUB_SHA"
