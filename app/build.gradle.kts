@@ -43,9 +43,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
     }
@@ -68,4 +65,10 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     // Нейросеть на телефоне (Gemma 4 через LiteRT-LM)
     implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
