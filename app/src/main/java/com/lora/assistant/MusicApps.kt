@@ -17,6 +17,31 @@ object MusicApps {
         "com.google.android.apps.youtube.music" to "YouTube Music",
     )
 
+    data class Service(val packageName: String, val title: String, val installed: Boolean)
+
+    fun services(context: Context): List<Service> = apps.map { (pkg, label) ->
+        val title = when (pkg) {
+            "ru.yandex.music" -> "Яндекс Музыка"
+            "com.uma.musicvk" -> "VK Музыка"
+            else -> "YouTube Music"
+        }
+        Service(pkg, title, context.packageManager.getLaunchIntentForPackage(pkg) != null)
+    }
+
+    /** Открывает приложение сервиса, где можно войти в аккаунт, а если его нет, страницу в магазине. */
+    fun openForLogin(context: Context, pkg: String) {
+        val launch = context.packageManager.getLaunchIntentForPackage(pkg)
+        val intent = launch ?: Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=$pkg"))
+        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.onFailure {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/store/apps/details?id=$pkg"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
+    }
+
     /** Возвращает название приложения, в котором запустили музыку, или null, если ни одно не подошло. */
     fun play(context: Context, query: String): String? {
         for ((pkg, label) in apps) {

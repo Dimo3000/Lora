@@ -141,6 +141,9 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(8.dp))
+            AccountsSection()
+
+            Spacer(Modifier.height(8.dp))
             Text("Яндекс Поиск (по желанию)", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Если вставить ключ API и идентификатор каталога из Yandex Cloud (сервис Search API, он платный), " +
@@ -163,6 +166,35 @@ fun SettingsScreen(
                 enabled = city.isNotBlank(),
             ) {
                 Text("Сохранить")
+            }
+        }
+    }
+}
+
+/** Музыкальные сервисы: вход выполняется в самом приложении сервиса, Лора просто запускает там музыку. */
+@Composable
+private fun AccountsSection() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val services = androidx.compose.runtime.remember { com.lora.assistant.MusicApps.services(context) }
+    Text("Музыка: войдите в аккаунт", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Лора включает музыку в приложениях сервисов по вашей подписке. Войдите в аккаунт в нужном приложении один раз, " +
+            "дальше она будет запускать там треки по голосу. Пароли в Лору вводить не нужно.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    services.forEach { svc ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(svc.title, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (svc.installed) "Установлено" else "Не установлено",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = { com.lora.assistant.MusicApps.openForLogin(context, svc.packageName) }) {
+                Text(if (svc.installed) "Открыть и войти" else "Установить")
             }
         }
     }
