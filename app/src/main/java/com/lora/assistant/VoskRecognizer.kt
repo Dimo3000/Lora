@@ -35,11 +35,13 @@ class VoskRecognizer(private val context: Context, private val listener: SpeechC
     init {
         val hasSpeaker = runCatching { context.assets.list(SPK_DIR)?.isNotEmpty() == true }.getOrDefault(false)
         if (hasSpeaker) {
-            StorageService.sync(
-                context, SPK_DIR, "model-spk",
-                { path -> main.post { speakerModel = runCatching { SpeakerModel(path) }.getOrNull() } },
-                { },
-            )
+            Thread {
+                runCatching {
+                    val path = StorageService.sync(context, SPK_DIR, "model-spk")
+                    val model = SpeakerModel(path)
+                    main.post { speakerModel = model }
+                }
+            }.start()
         }
         if (isBundled) {
             StorageService.unpack(
