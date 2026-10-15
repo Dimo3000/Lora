@@ -15,6 +15,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import com.lora.assistant.LlmState
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,10 +42,19 @@ import com.lora.assistant.Option
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(initial: AppSettings, onSave: (AppSettings) -> Unit, onBack: () -> Unit) {
+fun SettingsScreen(
+    initial: AppSettings,
+    llm: LlmState,
+    onSave: (AppSettings) -> Unit,
+    onBack: () -> Unit,
+    onDownloadModel: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDeleteModel: () -> Unit,
+) {
     var city by rememberSaveable { mutableStateOf(initial.city) }
     var language by rememberSaveable { mutableStateOf(initial.language) }
     var autoListen by rememberSaveable { mutableStateOf(initial.autoListen) }
+    var wakeWord by rememberSaveable { mutableStateOf(initial.wakeWord) }
 
     Scaffold(
         topBar = {
@@ -65,6 +77,22 @@ fun SettingsScreen(initial: AppSettings, onSave: (AppSettings) -> Unit, onBack: 
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            BrainSection(llm, onDownloadModel, onCancelDownload, onDeleteModel)
+
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Отзываться на имя «Лора»", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Работает, пока приложение открыто (экран при этом не гаснет). Скажите «Лора», дождитесь сигнала и задайте вопрос. Только русский язык.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = wakeWord, onCheckedChange = { wakeWord = it })
+            }
+
+            Spacer(Modifier.height(8.dp))
             Text("Город для погоды", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Используется, если в вопросе не назван город.",
@@ -98,12 +126,43 @@ fun SettingsScreen(initial: AppSettings, onSave: (AppSettings) -> Unit, onBack: 
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onSave(AppSettings(city, language, autoListen)) },
+                onClick = { onSave(AppSettings(city, language, autoListen, wakeWord)) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = city.isNotBlank(),
             ) {
                 Text("Сохранить")
             }
+        }
+    }
+}
+
+/** Блок про «разум» Лоры: нейросеть, которая работает прямо на телефоне. */
+@Composable
+private fun BrainSection(llm: LlmState, onDownload: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
+    Text("Разум Лоры", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Нейросеть работает прямо на телефоне: без интернета и без ключей. Нужно скачать один раз около 2,6 ГБ " +
+            "(лучше по Wi-Fi), свободно около 3 ГБ памяти и телефон с 6 ГБ оперативной памяти или больше. " +
+            "Отвечает не мгновенно: на слабых телефонах несколько секунд на фразу.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    when (llm) {
+        LlmState.Missing -> Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Скачать разум Лоры (2,6 ГБ)") }
+        is LlmState.Downloading -> {
+            val fraction = (llm.doneBytes.toFloat() / llm.totalBytes.coerceAtLeast(1)).coerceIn(0f, 1f)
+            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+            Text("Скачано ${llm.doneBytes / 1_000_000} из ${llm.totalBytes / 1_000_000} МБ", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Пауза") }
+        }
+        LlmState.Loading -> Text("Загружаю в память…", style = MaterialTheme.typography.bodyMedium)
+        LlmState.Ready -> {
+            Text("Готово: Лора умеет болтать на любые темы.", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Удалить разум и освободить 2,6 ГБ") }
+        }
+        is LlmState.Failed -> {
+            Text(llm.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Попробовать ещё раз") }
         }
     }
 }

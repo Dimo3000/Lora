@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.lora.assistant.ChatMessage
+import com.lora.assistant.LlmState
 import com.lora.assistant.Phase
 import com.lora.assistant.Role
 import com.lora.assistant.SpeechController
@@ -101,7 +103,7 @@ fun MainScreen(
     val micClick = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-        if (granted || state.phase != Phase.IDLE) onMicClick()
+        if (granted || (state.phase != Phase.IDLE && state.phase != Phase.WAKE)) onMicClick()
         else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
@@ -125,9 +127,33 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(top = padding.calculateTopPadding()),
         ) {
+            LlmBanner(state.llm, onOpenSettings)
             ChatList(state.messages, Modifier.weight(1f))
             BottomPanel(state, micClick, onSendText)
         }
+    }
+}
+
+/** Подсказка вверху: пока нейросеть не скачана, Лора отвечает только на простые вопросы. */
+@Composable
+private fun LlmBanner(llm: LlmState, onOpenSettings: () -> Unit) {
+    val text = when (llm) {
+        LlmState.Missing -> "Чтобы Лора могла болтать на любые темы, скачайте её «разум» в настройках."
+        is LlmState.Downloading -> "Скачиваю разум Лоры: ${(llm.doneBytes * 100 / llm.totalBytes.coerceAtLeast(1)).toInt()}%"
+        LlmState.Loading -> "Лора просыпается, это займёт полминуты…"
+        is LlmState.Failed -> "С разумом Лоры проблема, подробности в настройках."
+        LlmState.Ready -> return
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSettings),
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 
@@ -203,8 +229,9 @@ private fun BottomPanel(state: UiState, onMicClick: () -> Unit, onSendText: (Str
         ) {
             val status = when (state.phase) {
                 Phase.IDLE -> "Нажмите, чтобы спросить"
+                Phase.WAKE -> "Скажите «Лора» или нажмите на микрофон"
                 Phase.LISTENING -> state.partialText.ifBlank { "Слушаю…" }
-                Phase.THINKING -> "Ищу в интернете…"
+                Phase.THINKING -> "Думаю…"
                 Phase.SPEAKING -> "Отвечаю… (нажмите, чтобы остановить)"
             }
             Text(
@@ -269,7 +296,7 @@ private fun MicButton(state: UiState, onClick: () -> Unit) {
             ),
         ) {
             when (state.phase) {
-                Phase.IDLE -> Icon(Icons.Filled.Mic, "Говорить", Modifier.size(40.dp))
+                Phase.IDLE, Phase.WAKE -> Icon(Icons.Filled.Mic, "Говорить", Modifier.size(40.dp))
                 Phase.LISTENING -> Icon(Icons.Filled.Stop, "Закончить", Modifier.size(40.dp))
                 Phase.THINKING -> Box(contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(

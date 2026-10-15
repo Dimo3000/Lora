@@ -26,14 +26,20 @@ class SpeechController(private val context: Context, private val listener: Liste
         fun onListenError(message: String)
         fun onSoundLevel(level: Float)
         fun onSpeakingDone()
+        fun onWakeWord()
     }
 
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private val vosk = VoskRecognizer(context, listener)
+    private val piper = PiperVoice(context)
+    private val wake = WakeWordDetector { listener.onWakeWord() }
+    @Volatile private var systemSession = 0
+    private var pendingUtterances = 0
+    private var speechEnded = false
+    private var piperActive = false
     private var activeEngine = Engine.NONE
     private var ttsReady = false
-    private var lastUtteranceId: String? = null
     private var utteranceCounter = 0
 
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
@@ -44,17 +50,26 @@ class SpeechController(private val context: Context, private val listener: Liste
         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
 
-            override fun onDone(utteranceId: String?) {
-                if (utteranceId == lastUtteranceId) main.post { listener.onSpeakingDone() }
-            }
+            override fun onDone(utteranceId: String?) = finished(utteranceId)
 
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                if (utteranceId == lastUtteranceId) main.post { listener.onSpeakingDone() }
-            }
+            override fun onError(utteranceId: String?) = finished(utteranceId)
 
             override fun onStop(utteranceId: String?, interrupted: Boolean) = Unit
         })
+    }
+
+    private fun finished(utteranceId: String?) {
+        val session = utteranceId?.removePrefix("s")?.substringBefore('-')?.toIntOrNull()
+        main.post {
+            if (session != systemSession) return@post
+            pendingUtterances--
+            if (speechEnded && pendingUtterances <= 0) listener.onSpeakingDone()
+        }
+    }
+
+    init {
+        piper.load { }
     }
 
     /**
@@ -111,30 +126,100 @@ class SpeechController(private val context: Context, private val listener: Liste
         recognizer?.cancel()
     }
 
-    /** Озвучивает текст. Возвращает false, если синтез речи недоступен. */
-    fun speak(text: String, language: String): Boolean {
+    // ---------- Озвучка ----------
+
+    /** Какой голос используется: встроенный женский (Piper) или системный Android. */
+    val usesBuiltInVoice get() = piper.isReady
+
+    /**
+     * Начинает озвучку по предложениям: beginSpeech() → speakChunk() для каждого предложения → endSpeech().
+     * Когда всё договорено, вызывается listener.onSpeakingDone().
+     */
+    fun beginSpeech(language: String): Boolean {
+        stopSpeaking()
+        speechEnded = false
+        pendingUtterances = 0
+        val session = ++systemSession
+        piperActive = piper.isReady && language.startsWith("ru")
+        if (piperActive) {
+            piper.begin { if (session == systemSession) listener.onSpeakingDone() }
+            return true
+        }
         if (!ttsReady) return false
         val result = tts.setLanguage(Locale.forLanguageTag(language))
         if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
             tts.setLanguage(Locale.getDefault())
         }
-        val chunks = splitForTts(cleanForSpeech(text), TextToSpeech.getMaxSpeechInputLength() - 100)
-        if (chunks.isEmpty()) return false
-        chunks.forEachIndexed { index, chunk ->
-            val id = "u${utteranceCounter++}"
-            if (index == chunks.lastIndex) lastUtteranceId = id
-            tts.speak(chunk, if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, id)
+        pickFemaleVoice(language)
+        return true
+    }
+
+    fun speakChunk(text: String) {
+        val clean = cleanForSpeech(text)
+        if (clean.isBlank()) return
+        if (piperActive) {
+            piper.add(clean)
+            return
         }
+        for (chunk in splitForTts(clean, TextToSpeech.getMaxSpeechInputLength() - 100)) {
+            pendingUtterances++
+            tts.speak(chunk, TextToSpeech.QUEUE_ADD, null, "s$systemSession-${utteranceCounter++}")
+        }
+    }
+
+    fun endSpeech() {
+        speechEnded = true
+        if (piperActive) {
+            piper.end()
+        } else if (pendingUtterances == 0) {
+            main.post { listener.onSpeakingDone() }
+        }
+    }
+
+    /** Озвучивает целый текст. Возвращает false, если синтез речи недоступен. */
+    fun speak(text: String, language: String): Boolean {
+        if (!beginSpeech(language)) return false
+        speakChunk(text)
+        endSpeech()
         return true
     }
 
     fun stopSpeaking() {
-        lastUtteranceId = null
+        systemSession++
+        piper.stop()
         if (ttsReady) tts.stop()
+        pendingUtterances = 0
     }
 
+    /** Выбирает женский голос системного синтезатора, если их несколько. */
+    private fun pickFemaleVoice(language: String) {
+        val wanted = Locale.forLanguageTag(language).language
+        val voices = runCatching { tts.voices }.getOrNull().orEmpty()
+            .filter { it.locale.language == wanted && !it.isNetworkConnectionRequired }
+        val female = voices.firstOrNull { v ->
+            val n = v.name.lowercase()
+            n.contains("female") || n.contains("-f-") || n.contains("irina") || n.contains("anna") ||
+                n.contains("alena") || n.contains("ru-ru-x-ruf") || n.contains("ruc-") || n.contains("rud-")
+        }
+        if (female != null) runCatching { tts.voice = female }
+    }
+
+    // ---------- Имя «Лора» ----------
+
+    /** Начинает ждать слово «Лора». Нужна загруженная модель Vosk. */
+    fun startWakeWord(): Boolean {
+        val model = vosk.loadedModel ?: return false
+        return wake.start(model)
+    }
+
+    fun stopWakeWord() = wake.stop()
+
+    val wakeWordAvailable get() = vosk.isReady
+
     fun release() {
+        wake.stop()
         vosk.release()
+        piper.release()
         recognizer?.destroy()
         recognizer = null
         tts.stop()

@@ -27,6 +27,9 @@ class VoskRecognizer(private val context: Context, private val listener: SpeechC
 
     val isReady get() = model != null
 
+    /** Загруженная модель; её же использует детектор имени «Лора». */
+    val loadedModel: Model? get() = model
+
     init {
         if (isBundled) {
             StorageService.unpack(

@@ -33,28 +33,46 @@ class Answerer(
     /** Город из последнего вопроса о погоде, чтобы работало «а завтра?». */
     private var lastCity: String? = null
 
+    /** Полный ответ без нейросети: болтовня, живые данные, затем Википедия. */
     suspend fun answer(question: String, language: String, defaultCity: String): String =
         withContext(Dispatchers.IO) {
             val en = language.startsWith("en")
             val q = question.lowercase(Locale.ROOT).trim()
             smallTalk(q, en)?.let { return@withContext it }
             try {
-                when {
-                    q.containsAny("погод", "температур", "градус", "дожд", "снег", "weather", "temperature", "rain") ||
-                        (lastCity != null && q.containsAny("а завтра", "а послезавтра", "а сегодня", "and tomorrow")) ->
-                        weather(q, en, defaultCity)
-                    q.containsAny("курс", "доллар", "евро", "юан", "валют", "exchange rate", "dollar", "euro") ->
-                        currency(q, en)
-                    q.containsAny("новост", "news", "что происходит", "что нового") -> news(q, en)
-                    q.containsAny("который час", "сколько времени", "what time", "время сейчас") -> time(en)
-                    q.containsAny("какое сегодня число", "какой сегодня день", "какое число", "какая дата",
-                        "what day", "what's the date", "what is the date", "today's date") -> date(en)
-                    else -> facts(question, en)
-                }
+                liveAnswer(question, q, en, defaultCity) ?: facts(question, en)
             } catch (e: IOException) {
                 throw AnswerException(if (en) "No internet connection." else "Нет связи с интернетом.")
             }
         }
+
+    /**
+     * Ответ только на вопросы про живые данные (погода, курсы, новости, время, дата).
+     * Возвращает null, если вопрос другой: тогда с ним справится нейросеть.
+     */
+    suspend fun answerLive(question: String, language: String, defaultCity: String): String? =
+        withContext(Dispatchers.IO) {
+            val en = language.startsWith("en")
+            val q = question.lowercase(Locale.ROOT).trim()
+            try {
+                liveAnswer(question, q, en, defaultCity)
+            } catch (e: IOException) {
+                throw AnswerException(if (en) "No internet connection." else "Нет связи с интернетом.")
+            }
+        }
+
+    private fun liveAnswer(question: String, q: String, en: Boolean, defaultCity: String): String? = when {
+        q.containsAny("погод", "температур", "градус", "дожд", "weather", "temperature", "rain") ||
+            (lastCity != null && q.containsAny("а завтра", "а послезавтра", "а сегодня", "and tomorrow")) ->
+            weather(q, en, defaultCity)
+        q.containsAny("курс доллар", "курс евро", "курс юан", "курс валют", "курс фунт", "сколько стоит доллар",
+            "сколько стоит евро", "exchange rate", "dollar rate", "euro rate") -> currency(q, en)
+        q.containsAny("новост", "news") -> news(q, en)
+        q.containsAny("который час", "сколько времени", "what time", "время сейчас", "сколько сейчас времени") -> time(en)
+        q.containsAny("какое сегодня число", "какой сегодня день", "какое число", "какая дата",
+            "what day", "what's the date", "what is the date", "today's date") -> date(en)
+        else -> null
+    }
 
     // ---------- Разговор ----------
 

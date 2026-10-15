@@ -18,6 +18,10 @@ jobs:
           java-version: "17"
       - name: Download offline speech model
         run: bash scripts/download-vosk-model.sh
+      - name: Fetch female voice and native libraries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch-sherpa.sh
       - name: Build debug APK
         run: |
           chmod +x gradlew

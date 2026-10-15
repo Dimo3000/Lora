@@ -8,6 +8,8 @@ data class AppSettings(
     val city: String = "Москва",
     val language: String = LANGUAGES.first().id,
     val autoListen: Boolean = false,
+    /** Откликаться на имя «Лора», пока приложение открыто. */
+    val wakeWord: Boolean = false,
 ) {
     companion object {
         val LANGUAGES = listOf(
@@ -25,6 +27,7 @@ class SettingsStore(context: Context) {
         city = prefs.getString("city", null)?.ifBlank { null } ?: AppSettings().city,
         language = prefs.getString("language", null) ?: AppSettings.LANGUAGES.first().id,
         autoListen = prefs.getBoolean("auto_listen", false),
+        wakeWord = prefs.getBoolean("wake_word", false),
     )
 
     fun save(settings: AppSettings) {
@@ -32,6 +35,7 @@ class SettingsStore(context: Context) {
             .putString("city", settings.city.trim())
             .putString("language", settings.language)
             .putBoolean("auto_listen", settings.autoListen)
+            .putBoolean("wake_word", settings.wakeWord)
             .apply()
     }
 }
