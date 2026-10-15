@@ -208,7 +208,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
                         Rich.Kind.PICTURES -> listOfNotNull(rich.pictures(question))
                         Rich.Kind.VIDEO -> rich.video(question)
                         Rich.Kind.MOVIES -> rich.movies(question)
-                        else -> emptyList()
+                        else -> if (answerer.needsWeb(question)) listOf(rich.yandex(question)) else emptyList()
                     }
                 }
                 val live = answerer.answerLive(question, settings.language, settings.city)
@@ -243,17 +243,17 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
 
     /** «Включи симфонию»: ищем свободную запись и сразу запускаем, без голоса поверх музыки. */
     private suspend fun playMusic(question: String) {
-        val track = withContext(Dispatchers.IO) { runCatching { rich.audio(question) }.getOrNull() }
+        val track = if (!rich.isFreeMusicRequest(question)) null
+        else withContext(Dispatchers.IO) { runCatching { rich.audio(question) }.getOrNull() }
         if (track != null) {
             addMessage(Role.ASSISTANT, "Включаю: ${track.title}", listOf(track))
             AudioPlayer.play(track.url)
             finishTurn()
         } else {
-            val subject = question.trim()
             deliver(
-                "Эту запись включить сама не могу: у песен и новой музыки есть авторские права. " +
-                    "Свободную классику найду без проблем. Для остального открою поиск в YouTube.",
-                listOf(rich.youtube(subject)),
+                "Современную музыку сама проиграть не могу, у неё авторские права. " +
+                    "Выберите, где открыть: нажмите на сервис, поиск уже введён.",
+                rich.musicLinks(question.trim()),
             )
         }
     }

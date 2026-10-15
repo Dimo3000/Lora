@@ -23,8 +23,8 @@ class Rich {
 
     fun kindOf(question: String): Kind {
         val q = question.lowercase(Locale.ROOT)
-        val command = q.containsAny("включи", "поставь", "сыграй", "запусти", "проиграй", "послушать", "послушаем", "play ")
-        val music = q.containsAny("симфон", "музык", "песн", "мелоди", "сонат", "концерт", "вальс", "опер", "классик", "реквием",
+        val command = q.containsAny("включи", "поставь", "сыграй", "запусти", "проиграй", "послушать", "послушаем", "play ", "включай", "врубай", "давай послушаем")
+        val music = q.containsAny("поп", "рэп", "рок", "джаз", "шансон", "хит", "трек", "альбом", "радио", "русск", "зарубеж", "симфон", "музык", "песн", "мелоди", "сонат", "концерт", "вальс", "опер", "классик", "реквием",
             "бах", "моцарт", "бетховен", "чайковск", "шопен", "вивальди", "григ", "шуберт", "вагнер", "рахманинов", "music", "song")
         return when {
             command && music -> Kind.AUDIO
@@ -35,6 +35,10 @@ class Rich {
             else -> Kind.NONE
         }
     }
+
+    /** Классика и «просто музыка» ищутся среди свободных записей, поп, рэп и рок — нет (авторские права). */
+    fun isFreeMusicRequest(question: String): Boolean =
+        !question.lowercase(Locale.ROOT).containsAny("поп", "рэп", "рок", "шансон", "хит", "русск", "зарубеж", "трек", "альбом", "песн", "радио")
 
     /** Свободная запись для запроса «включи симфонию». null — подходящей нет. */
     fun audio(question: String): AudioCard? {
@@ -64,7 +68,7 @@ class Rich {
         if (clips.isNotEmpty()) {
             cards += GalleryCard("Видео: $subject", clips.map { Tile(it.title, it.credit, it.thumb, it.url) })
         }
-        cards += youtube(subject, "Смотреть на YouTube")
+        cards += videoLinks(subject)
         return cards
     }
 
@@ -94,9 +98,27 @@ class Rich {
         }.orEmpty()
         val cards = mutableListOf<Card>()
         if (tiles.isNotEmpty()) cards += GalleryCard("Фильмы: $subject", tiles)
-        cards += youtube("$subject трейлер", "Трейлеры на YouTube")
+        cards += videoLinks("$subject трейлер")
         return cards
     }
+
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+    fun videoLinks(query: String): List<Card> = listOf(
+        LinkCard("Смотреть в Rutube", query, "https://rutube.ru/search/?query=${enc(query)}"),
+        LinkCard("Смотреть в VK Видео", query, "https://vk.com/video?q=${enc(query)}"),
+        youtube(query, "Смотреть на YouTube"),
+    )
+
+    /** Музыка, которую нельзя проиграть самой: открываем поиск в сервисах, где у пользователя есть подписка. */
+    fun musicLinks(query: String): List<Card> = listOf(
+        LinkCard("Слушать в Яндекс Музыке", query, "https://music.yandex.ru/search?text=${enc(query)}"),
+        LinkCard("Слушать в VK Музыке", query, "https://vk.com/audio?q=${enc(query)}"),
+        LinkCard("Слушать в YouTube Music", query, "https://music.youtube.com/search?q=${enc(query)}"),
+        LinkCard("Клипы в Rutube", query, "https://rutube.ru/search/?query=${enc(query)}"),
+    )
+
+    fun yandex(query: String) = LinkCard("Искать в Яндексе", query, "https://yandex.ru/search/?text=${enc(query)}")
 
     fun youtube(query: String, title: String = "Искать в YouTube") =
         LinkCard(title, query, "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8"))

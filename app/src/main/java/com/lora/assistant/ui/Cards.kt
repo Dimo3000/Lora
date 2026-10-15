@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.lora.assistant.AudioCard
 import com.lora.assistant.AudioPlayer
 import com.lora.assistant.Card
@@ -113,8 +114,10 @@ private fun GalleryView(card: GalleryCard) {
             items(card.tiles) { tile ->
                 val go = open(tile.link)
                 Column(Modifier.width(150.dp).clip(RoundedCornerShape(14.dp)).clickable { go() }) {
+                    val context = LocalContext.current
                     AsyncImage(
-                        model = tile.imageUrl,
+                        model = ImageRequest.Builder(context).data(tile.imageUrl)
+                            .addHeader("User-Agent", "Lora/1.6 (Android voice assistant)").crossfade(true).build(),
                         contentDescription = tile.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(14.dp)),
