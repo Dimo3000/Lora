@@ -12,8 +12,8 @@ android {
         applicationId = "com.lora.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = 6
+        versionName = "1.5"
 
         // Нативные библиотеки (распознавание, голос, нейросеть) собраны только под современные 64-битные ARM-телефоны.
         ndk {
@@ -64,6 +64,7 @@ dependencies {
     implementation("com.alphacephei:vosk-android:0.3.47")
     implementation("net.java.dev.jna:jna:5.13.0@aar")
     // Нейросеть на телефоне (Gemma 4 через LiteRT-LM)
+    implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 }
 

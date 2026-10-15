@@ -197,7 +197,7 @@ private fun MessageBubble(message: ChatMessage) {
         Role.ASSISTANT -> MaterialTheme.colorScheme.onSurfaceVariant
         Role.ERROR -> MaterialTheme.colorScheme.onErrorContainer
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
         Surface(
             color = background,
             shape = RoundedCornerShape(18.dp),
@@ -211,6 +211,9 @@ private fun MessageBubble(message: ChatMessage) {
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 )
             }
+        }
+        message.cards.forEach { card ->
+            Box(Modifier.padding(top = 8.dp).widthIn(max = 340.dp)) { CardView(card) }
         }
     }
 }

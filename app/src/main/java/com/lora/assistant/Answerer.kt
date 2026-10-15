@@ -32,6 +32,11 @@ class Answerer(
 ) {
     private val web = WebSearch()
 
+    /** Карточка погоды из последнего ответа; забирается один раз. */
+    private var pendingCard: WeatherCard? = null
+
+    fun takeCard(): WeatherCard? = pendingCard.also { pendingCard = null }
+
     /** Нужен ли вопросу поиск в интернете (подборки, фильмы, рецепты, свежие факты). */
     fun needsWeb(question: String): Boolean {
         val q = question.lowercase(Locale.ROOT).trim()
@@ -164,6 +169,36 @@ class Answerer(
         val code = daily.getJSONArray("weather_code").getInt(day)
         val rain = daily.optJSONArray("precipitation_probability_max")?.optInt(day, -1) ?: -1
 
+        val dates = daily.optJSONArray("time")
+        val days = (0 until daily.getJSONArray("temperature_2m_max").length()).map { i ->
+            val label = when (i) {
+                0 -> if (en) "Today" else "Сегодня"
+                1 -> if (en) "Tomorrow" else "Завтра"
+                else -> runCatching {
+                    java.time.LocalDate.parse(dates.getString(i)).dayOfWeek
+                        .getDisplayName(java.time.format.TextStyle.FULL, if (en) Locale.US else Locale("ru"))
+                        .replaceFirstChar { it.uppercase() }
+                }.getOrDefault("")
+            }
+            DayForecast(
+                label, weatherEmoji(daily.getJSONArray("weather_code").getInt(i)),
+                daily.getJSONArray("temperature_2m_min").getDouble(i).roundToInt(),
+                daily.getJSONArray("temperature_2m_max").getDouble(i).roundToInt(),
+                daily.optJSONArray("precipitation_probability_max")?.optInt(i, -1) ?: -1,
+            )
+        }
+        val currentJson = json.optJSONObject("current")
+        pendingCard = WeatherCard(
+            city = place.name,
+            emoji = weatherEmoji(if (day == 0 && currentJson != null) currentJson.getInt("weather_code") else code),
+            temperature = if (day == 0) currentJson?.getDouble("temperature_2m")?.roundToInt() else null,
+            description = weatherText(if (day == 0 && currentJson != null) currentJson.getInt("weather_code") else code, en)
+                .replaceFirstChar { it.uppercase() },
+            feelsLike = if (day == 0) currentJson?.getDouble("apparent_temperature")?.roundToInt() else null,
+            wind = if (day == 0) currentJson?.getDouble("wind_speed_10m")?.roundToInt() else null,
+            days = days,
+        )
+
         if (day == 0) {
             val cur = json.getJSONObject("current")
             val t = cur.getDouble("temperature_2m").roundToInt()
@@ -234,6 +269,18 @@ class Answerer(
             }
         }
         return (variants(last).map { (adjectiveFix + it).joinToString(" ") } + name).distinct()
+    }
+
+    private fun weatherEmoji(code: Int) = when (code) {
+        0 -> "☀️"
+        1, 2 -> "🌤️"
+        3 -> "☁️"
+        45, 48 -> "🌫️"
+        in 51..57 -> "🌦️"
+        in 61..67, in 80..82 -> "🌧️"
+        in 71..77, 85, 86 -> "❄️"
+        in 95..99 -> "⛈️"
+        else -> "🌡️"
     }
 
     private fun weatherText(code: Int, en: Boolean): String = when (code) {

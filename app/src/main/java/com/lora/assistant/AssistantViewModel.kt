@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 
 enum class Role { USER, ASSISTANT, ERROR }
 
-data class ChatMessage(val id: Long, val role: Role, val text: String)
+data class ChatMessage(val id: Long, val role: Role, val text: String, val cards: List<Card> = emptyList())
 
 /** WAKE: ждём, когда назовут имя «Лора». */
 enum class Phase { IDLE, WAKE, LISTENING, THINKING, SPEAKING }
@@ -41,6 +41,7 @@ data class UiState(
 class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechController.Listener {
 
     private val store = SettingsStore(app)
+    private val rich = Rich()
     private val answerer = Answerer()
     private val llm = LocalLlm(app)
     private val speech = SpeechController(app, this)
@@ -197,10 +198,24 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         askJob?.cancel()
         askJob = viewModelScope.launch {
             try {
+                val kind = rich.kindOf(question)
+                if (kind == Rich.Kind.AUDIO) {
+                    playMusic(question)
+                    return@launch
+                }
+                val cards = withContext(Dispatchers.IO) {
+                    when (kind) {
+                        Rich.Kind.PICTURES -> listOfNotNull(rich.pictures(question))
+                        Rich.Kind.VIDEO -> rich.video(question)
+                        Rich.Kind.MOVIES -> rich.movies(question)
+                        else -> emptyList()
+                    }
+                }
                 val live = answerer.answerLive(question, settings.language, settings.city)
                 when {
-                    live != null -> deliver(live)
-                    _state.value.llm == LlmState.Ready -> chatWithLlm(question)
+                    live != null -> deliver(live, listOfNotNull(answerer.takeCard()))
+                    cards.isNotEmpty() && _state.value.llm != LlmState.Ready -> deliver(introFor(kind), cards)
+                    _state.value.llm == LlmState.Ready -> chatWithLlm(question, cards)
                     else -> deliver(answerer.answer(question, settings.language, settings.city))
                 }
             } catch (e: CancellationException) {
@@ -213,17 +228,41 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     }
 
     /** Показывает готовый ответ и озвучивает его целиком. */
-    private fun deliver(answer: String) {
-        addMessage(Role.ASSISTANT, answer)
+    private fun deliver(answer: String, cards: List<Card> = emptyList()) {
+        addMessage(Role.ASSISTANT, answer, cards)
         if (speech.speak(answer, settings.language)) setPhase(Phase.SPEAKING) else finishTurn()
     }
 
     /** Нейросеть отвечает потоком: текст появляется на экране, а готовые предложения сразу озвучиваются. */
-    private suspend fun chatWithLlm(question: String) {
+    private fun introFor(kind: Rich.Kind) = when (kind) {
+        Rich.Kind.PICTURES -> "Вот что нашла."
+        Rich.Kind.VIDEO -> "Нашла видео, нажмите на превью."
+        Rich.Kind.MOVIES -> "Вот несколько фильмов, нажмите на афишу, чтобы узнать подробнее."
+        else -> "Вот что нашла."
+    }
+
+    /** «Включи симфонию»: ищем свободную запись и сразу запускаем, без голоса поверх музыки. */
+    private suspend fun playMusic(question: String) {
+        val track = withContext(Dispatchers.IO) { runCatching { rich.audio(question) }.getOrNull() }
+        if (track != null) {
+            addMessage(Role.ASSISTANT, "Включаю: ${track.title}", listOf(track))
+            AudioPlayer.play(track.url)
+            finishTurn()
+        } else {
+            val subject = question.trim()
+            deliver(
+                "Эту запись включить сама не могу: у песен и новой музыки есть авторские права. " +
+                    "Свободную классику найду без проблем. Для остального открою поиск в YouTube.",
+                listOf(rich.youtube(subject)),
+            )
+        }
+    }
+
+    private suspend fun chatWithLlm(question: String, cards: List<Card> = emptyList()) {
         val web = if (answerer.needsWeb(question)) runCatching { answerer.webContext(question) }.getOrNull() else null
         val id = nextId++
         var shown = ""
-        _state.update { it.copy(messages = it.messages + ChatMessage(id, Role.ASSISTANT, "…")) }
+        _state.update { it.copy(messages = it.messages + ChatMessage(id, Role.ASSISTANT, "…", cards)) }
         val speaking = speech.beginSpeech(settings.language)
         val pending = StringBuilder()
         var started = false
@@ -298,8 +337,13 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         if (speech.startWakeWord()) setPhase(Phase.WAKE)
     }
 
-    private fun addMessage(role: Role, text: String) {
-        _state.update { it.copy(messages = it.messages + ChatMessage(nextId++, role, text)) }
+    private fun addMessage(role: Role, text: String, cards: List<Card> = emptyList()) {
+        _state.update { it.copy(messages = it.messages + ChatMessage(nextId++, role, text, cards)) }
+    }
+
+    private fun attachCards(id: Long, cards: List<Card>) {
+        if (cards.isEmpty()) return
+        _state.update { st -> st.copy(messages = st.messages.map { if (it.id == id) it.copy(cards = cards) else it }) }
     }
 
     private fun updateMessage(id: Long, text: String) {
