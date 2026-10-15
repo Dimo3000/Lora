@@ -12,8 +12,13 @@ android {
         applicationId = "com.lora.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
+
+        // Встроенное распознавание (Vosk) содержит нативные библиотеки; оставляем только телефонные ARM.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     // Постоянный ключ подписи, чтобы новые сборки ставились поверх старых без удаления приложения.
@@ -58,4 +63,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Офлайн-распознавание речи
+    implementation("com.alphacephei:vosk-android:0.3.47")
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
 }

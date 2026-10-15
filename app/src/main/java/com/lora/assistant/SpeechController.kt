@@ -30,6 +30,8 @@ class SpeechController(private val context: Context, private val listener: Liste
 
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
+    private val vosk = VoskRecognizer(context, listener)
+    private var activeEngine = Engine.NONE
     private var ttsReady = false
     private var lastUtteranceId: String? = null
     private var utteranceCounter = 0
@@ -59,18 +61,25 @@ class SpeechController(private val context: Context, private val listener: Liste
      * Через какой движок можно распознавать речь в фоне, прямо внутри приложения.
      * NONE значит, что остаётся только системное окно распознавания (см. recognizeIntent).
      */
-    fun backgroundEngine(): Engine = when {
+    fun backgroundEngine(language: String): Engine = when {
+        // Для русского сначала встроенный офлайн-движок: он есть в APK и не зависит от Google.
+        language.startsWith("ru") && vosk.isBundled -> Engine.VOSK
         SpeechRecognizer.isRecognitionAvailable(context) -> Engine.SERVICE
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             SpeechRecognizer.isOnDeviceRecognitionAvailable(context) -> Engine.ON_DEVICE
         else -> Engine.NONE
     }
 
-    enum class Engine { SERVICE, ON_DEVICE, NONE }
+    enum class Engine { VOSK, SERVICE, ON_DEVICE, NONE }
 
     fun startListening(language: String) {
         stopSpeaking()
-        val r = recognizer ?: createRecognizer().also {
+        activeEngine = backgroundEngine(language)
+        if (activeEngine == Engine.VOSK) {
+            vosk.start()
+            return
+        }
+        val r = recognizer ?: createRecognizer(activeEngine).also {
             it.setRecognitionListener(recognitionListener)
             recognizer = it
         }
@@ -85,8 +94,8 @@ class SpeechController(private val context: Context, private val listener: Liste
         r.startListening(intent)
     }
 
-    private fun createRecognizer(): SpeechRecognizer =
-        if (backgroundEngine() == Engine.ON_DEVICE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    private fun createRecognizer(engine: Engine): SpeechRecognizer =
+        if (engine == Engine.ON_DEVICE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
         } else {
             SpeechRecognizer.createSpeechRecognizer(context)
@@ -94,10 +103,11 @@ class SpeechController(private val context: Context, private val listener: Liste
 
     /** Закончить слушать и распознать то, что уже сказано. */
     fun stopListening() {
-        recognizer?.stopListening()
+        if (activeEngine == Engine.VOSK) vosk.finish() else recognizer?.stopListening()
     }
 
     fun cancelListening() {
+        vosk.cancel()
         recognizer?.cancel()
     }
 
@@ -124,6 +134,7 @@ class SpeechController(private val context: Context, private val listener: Liste
     }
 
     fun release() {
+        vosk.release()
         recognizer?.destroy()
         recognizer = null
         tts.stop()

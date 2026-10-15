@@ -37,6 +37,7 @@ class Answerer(
         withContext(Dispatchers.IO) {
             val en = language.startsWith("en")
             val q = question.lowercase(Locale.ROOT).trim()
+            smallTalk(q, en)?.let { return@withContext it }
             try {
                 when {
                     q.containsAny("погод", "температур", "градус", "дожд", "снег", "weather", "temperature", "rain") ||
@@ -54,6 +55,20 @@ class Answerer(
                 throw AnswerException(if (en) "No internet connection." else "Нет связи с интернетом.")
             }
         }
+
+    // ---------- Разговор ----------
+
+    /** Ответы на бытовые фразы: «привет», «как дела», «спасибо», «расскажи анекдот» и т.п. */
+    private fun smallTalk(q: String, en: Boolean): String? {
+        val text = q.replace(Regex("[?!.,]"), " ").replace(Regex("\\s+"), " ").trim()
+        val rules = if (en) SMALL_TALK_EN else SMALL_TALK_RU
+        val replies = rules.firstOrNull { (keys, _) -> keys.any { matchesPhrase(text, it) } }?.second ?: return null
+        return replies.random()
+    }
+
+    /** Фраза совпадает целиком или стоит в начале/конце, чтобы «как дела с погодой» не перехватывалось. */
+    private fun matchesPhrase(text: String, phrase: String) =
+        text == phrase || (text.length <= phrase.length + 14 && (text.startsWith("$phrase ") || text.endsWith(" $phrase")))
 
     // ---------- Погода ----------
 
@@ -346,6 +361,57 @@ class Answerer(
     private fun getJson(url: HttpUrl) = JSONObject(getText(url))
 
     private companion object {
+        val SMALL_TALK_RU: List<Pair<List<String>, List<String>>> = listOf(
+            listOf("привет", "здравствуй", "здравствуйте", "добрый день", "добрый вечер", "доброе утро", "хай", "салют") to listOf(
+                "Привет! Чем могу помочь?", "Здравствуйте! Спросите меня о погоде, новостях или о чём угодно.", "Привет-привет! Я вас слушаю.",
+            ),
+            listOf("как дела", "как ты", "как поживаешь", "как жизнь", "как настроение", "ты как", "как сама") to listOf(
+                "Всё отлично, спасибо! А у вас как?", "Хорошо! Готова отвечать на вопросы.", "Прекрасно, особенно когда со мной разговаривают. Как ваши дела?",
+            ),
+            listOf("хорошо", "нормально", "отлично", "тоже хорошо", "всё хорошо", "все хорошо", "неплохо") to listOf(
+                "Рада слышать! Чем могу помочь?", "Здорово! Если что-то нужно узнать, спрашивайте.",
+            ),
+            listOf("плохо", "грустно", "так себе", "не очень", "мне грустно", "мне плохо") to listOf(
+                "Жаль это слышать. Надеюсь, скоро станет лучше. Хотите, расскажу анекдот?",
+                "Бывает. Может, прогулка поможет? Могу подсказать погоду.",
+            ),
+            listOf("что делаешь", "чем занимаешься", "что ты делаешь") to listOf(
+                "Слушаю вас и жду вопросов.", "Отдыхаю, пока вы не спросите что-нибудь интересное.",
+            ),
+            listOf("как тебя зовут", "кто ты", "ты кто", "твоё имя", "твое имя", "представься") to listOf(
+                "Меня зовут Лора, я ваш голосовой помощник.",
+            ),
+            listOf("что ты умеешь", "что умеешь", "помощь", "что ты можешь", "чем ты можешь помочь") to listOf(
+                "Я могу рассказать погоду, курс валют, главные новости, сказать время и дату, найти факты в Википедии и просто поболтать.",
+            ),
+            listOf("спасибо", "спасибо большое", "благодарю", "спс", "молодец", "умница") to listOf(
+                "Пожалуйста!", "Всегда рада помочь!", "Обращайтесь!",
+            ),
+            listOf("пока", "до свидания", "спокойной ночи", "до встречи", "увидимся") to listOf(
+                "До встречи!", "Пока! Хорошего дня!", "Всего доброго!",
+            ),
+            listOf("расскажи анекдот", "анекдот", "пошути", "расскажи шутку", "шутка", "рассмеши меня") to listOf(
+                "Программист ставит на тумбочку два стакана: один с водой, если захочет пить, другой пустой, если не захочет.",
+                "Звонок в техподдержку: «У меня не работает интернет». — «А что горит на роутере?» — «Пока ничего, но я уже близка».",
+                "Купил умную колонку. Теперь она всё знает, а я всё так же ничего не помню.",
+                "Встречаются два кота. Один говорит: «Мяу». Второй: «Мяу-мяу». Первый: «Ну вот, опять ты о политике».",
+            ),
+            listOf("ты меня любишь", "я тебя люблю", "ты мне нравишься") to listOf(
+                "Это очень мило! Я всегда рада с вами поговорить.",
+            ),
+            listOf("сколько тебе лет", "твой возраст") to listOf("Я совсем молодая, появилась в 2026 году."),
+            listOf("кто тебя создал", "кто тебя сделал", "кто твой создатель") to listOf("Меня создали специально для Дмитрия."),
+        )
+        val SMALL_TALK_EN: List<Pair<List<String>, List<String>>> = listOf(
+            listOf("hi", "hello", "hey", "good morning", "good evening") to listOf("Hi! How can I help?", "Hello! Ask me anything."),
+            listOf("how are you", "how are you doing", "how's it going") to listOf("I'm great, thanks! How are you?", "Doing well and ready to help."),
+            listOf("what's your name", "who are you", "what is your name") to listOf("I'm Lora, your voice assistant."),
+            listOf("what can you do", "help") to listOf("I can tell you the weather, exchange rates, news, time and date, look things up on Wikipedia, and chat."),
+            listOf("thank you", "thanks") to listOf("You're welcome!", "Happy to help!"),
+            listOf("bye", "goodbye", "good night", "see you") to listOf("Goodbye!", "See you later!"),
+            listOf("tell me a joke", "joke") to listOf("Why do programmers prefer dark mode? Because light attracts bugs."),
+        )
+
         val NEWS_STOP_WORDS = setOf(
             "новости", "новость", "новостей", "последние", "свежие", "главные", "какие", "расскажи", "скажи",
             "покажи", "что", "нового", "сегодня", "про", "о", "об", "по", "теме", "в", "мире", "происходит",

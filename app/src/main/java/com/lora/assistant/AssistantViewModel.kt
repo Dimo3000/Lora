@@ -89,7 +89,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     fun permissionDenied() = addMessage(Role.ERROR, "Без доступа к микрофону можно только печатать вопросы.")
 
     private fun startListening() {
-        if (speech.backgroundEngine() == SpeechController.Engine.NONE) {
+        if (speech.backgroundEngine(settings.language) == SpeechController.Engine.NONE) {
             // Фонового сервиса нет: просим UI открыть системное окно распознавания.
             speech.stopSpeaking()
             _state.update { it.copy(systemRecognizerRequest = System.nanoTime(), phase = Phase.IDLE) }
