@@ -70,6 +70,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     init {
         nextId = _state.value.messages.size.toLong()
         llm.city = settings.city
+        applyRuntimeSettings()
         if (llm.isDownloaded()) loadLlm()
     }
 
@@ -105,11 +106,18 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         resumeWake()
     }
 
+    private fun applyRuntimeSettings() {
+        SearchConfig.yandexKey = settings.yandexKey
+        SearchConfig.yandexFolder = settings.yandexFolder
+        speech.speechRate = settings.speechRate
+    }
+
     fun saveSettings(newSettings: AppSettings) {
         store.save(newSettings)
         val saved = store.load()
         llm.city = saved.city
         _state.update { it.copy(settings = saved) }
+        applyRuntimeSettings()
         if (_state.value.phase == Phase.IDLE || _state.value.phase == Phase.WAKE) {
             speech.stopWakeWord()
             _state.update { it.copy(phase = Phase.IDLE) }
@@ -221,6 +229,13 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
                     playMusic(question)
                     return@launch
                 }
+                if (kind == Rich.Kind.SEARCH && question.lowercase().containsAny("рецепт", "приготовить", "как сделать")) {
+                    val recipe = withContext(Dispatchers.IO) { rich.recipe(question) }
+                    if (recipe != null) {
+                        deliver("Вот рецепт: ${recipe.title}. Ингредиенты и шаги ниже, в чате.", listOf(recipe))
+                        return@launch
+                    }
+                }
                 val cards = withContext(Dispatchers.IO) {
                     when (kind) {
                         Rich.Kind.PICTURES -> listOfNotNull(rich.pictures(question))
@@ -233,6 +248,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
                 val live = answerer.answerLive(question, settings.language, settings.city)
                 when {
                     live != null -> deliver(live, listOfNotNull(answerer.takeCard()))
+                    kind == Rich.Kind.SEARCH && cards.isNotEmpty() && _state.value.llm == LlmState.Ready -> chatWithLlm(question, cards)
                     cards.isNotEmpty() -> deliver(introFor(kind, question), cards)
                     _state.value.llm == LlmState.Ready -> chatWithLlm(question, cards)
                     else -> deliver(greetByName(question, answerer.answer(question, settings.language, settings.city)))
@@ -563,3 +579,5 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         val SENTENCE_END = Regex("[.!?…]+[\\s\\n]+|\\n+")
     }
 }
+
+private fun String.containsAny(vararg parts: String) = parts.any { contains(it) }

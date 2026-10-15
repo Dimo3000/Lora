@@ -36,6 +36,11 @@ class SpeechController(private val context: Context, private val listener: Liste
     private var recognizer: SpeechRecognizer? = null
     val vosk = VoskRecognizer(context, listener)
     private val piper = PiperVoice(context)
+
+    /** Скорость речи из настроек. */
+    var speechRate: Float
+        get() = piper.rate
+        set(value) { piper.rate = value }
     private val wake = WakeWordDetector { listener.onWakeWord() }
     @Volatile private var systemSession = 0
     private var pendingUtterances = 0

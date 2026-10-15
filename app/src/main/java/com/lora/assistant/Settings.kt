@@ -10,6 +10,11 @@ data class AppSettings(
     val autoListen: Boolean = false,
     /** Откликаться на имя «Лора», пока приложение открыто. */
     val wakeWord: Boolean = false,
+    /** Яндекс Поиск по API (необязательно): ключ и идентификатор каталога из Yandex Cloud. */
+    val yandexKey: String = "",
+    val yandexFolder: String = "",
+    /** Скорость речи: 0.8 медленнее, 1.2 быстрее. */
+    val speechRate: Float = 1.0f,
 ) {
     companion object {
         val LANGUAGES = listOf(
@@ -28,6 +33,9 @@ class SettingsStore(context: Context) {
         language = prefs.getString("language", null) ?: AppSettings.LANGUAGES.first().id,
         autoListen = prefs.getBoolean("auto_listen", false),
         wakeWord = prefs.getBoolean("wake_word", false),
+        yandexKey = prefs.getString("yandex_key", "") ?: "",
+        yandexFolder = prefs.getString("yandex_folder", "") ?: "",
+        speechRate = prefs.getFloat("speech_rate", 1.0f),
     )
 
     fun save(settings: AppSettings) {
@@ -36,6 +44,9 @@ class SettingsStore(context: Context) {
             .putString("language", settings.language)
             .putBoolean("auto_listen", settings.autoListen)
             .putBoolean("wake_word", settings.wakeWord)
+            .putString("yandex_key", settings.yandexKey.trim())
+            .putString("yandex_folder", settings.yandexFolder.trim())
+            .putFloat("speech_rate", settings.speechRate)
             .apply()
     }
 }

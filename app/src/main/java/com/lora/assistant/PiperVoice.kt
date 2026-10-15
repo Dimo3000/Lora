@@ -28,6 +28,9 @@ class PiperVoice(private val context: Context) {
 
     val isReady get() = tts != null
 
+    /** Множитель скорости речи (1.0 обычная). */
+    @Volatile var rate: Float = 1.0f
+
     /** Загружает голос в фоне. onDone(false) — голос не удалось поднять, тогда используем системный. */
     fun load(onDone: (Boolean) -> Unit) {
         if (!isBundled) {
@@ -111,7 +114,7 @@ class PiperVoice(private val context: Context) {
                     if (text == END || cancelled) break
                     // Живая интонация: вопрос чуть медленнее, восклицание бодрее, после фразы небольшая пауза.
                     val trimmed = text.trimEnd()
-                    val speed = when {
+                    val speed = rate * when {
                         trimmed.endsWith("?") -> 0.96f
                         trimmed.endsWith("!") -> 1.04f
                         else -> 1.0f

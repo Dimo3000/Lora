@@ -24,3 +24,6 @@ data class AudioCard(val title: String, val subtitle: String, val url: String) :
 
 /** Одна кнопка-ссылка, например «Искать в YouTube». */
 data class LinkCard(val title: String, val subtitle: String, val link: String) : Card
+
+/** Готовый рецепт прямо в чате. */
+data class RecipeCard(val title: String, val ingredients: List<String>, val steps: List<String>, val source: String) : Card

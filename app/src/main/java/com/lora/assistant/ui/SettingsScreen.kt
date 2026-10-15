@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -58,6 +59,9 @@ fun SettingsScreen(
     var language by rememberSaveable { mutableStateOf(initial.language) }
     var autoListen by rememberSaveable { mutableStateOf(initial.autoListen) }
     var wakeWord by rememberSaveable { mutableStateOf(initial.wakeWord) }
+    var yandexKey by rememberSaveable { mutableStateOf(initial.yandexKey) }
+    var yandexFolder by rememberSaveable { mutableStateOf(initial.yandexFolder) }
+    var speechRate by rememberSaveable { mutableStateOf(initial.speechRate) }
 
     Scaffold(
         topBar = {
@@ -128,11 +132,33 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(8.dp))
+            Text("Скорость речи", style = MaterialTheme.typography.titleMedium)
+            Slider(value = speechRate, onValueChange = { speechRate = it }, valueRange = 0.8f..1.25f)
+            Text(
+                "%.2f: левее медленнее, правее быстрее.".format(speechRate),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(8.dp))
+            Text("Яндекс Поиск (по желанию)", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Если вставить ключ API и идентификатор каталога из Yandex Cloud (сервис Search API, он платный), " +
+                    "Лора будет искать через Яндекс. Без них ищет через DuckDuckGo и Bing.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(value = yandexKey, onValueChange = { yandexKey = it }, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, label = { Text("API-ключ") })
+            OutlinedTextField(value = yandexFolder, onValueChange = { yandexFolder = it }, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, label = { Text("Идентификатор каталога") })
+
+            Spacer(Modifier.height(8.dp))
             VoicesSection(voices, onEnrollVoice, onRemoveVoice)
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onSave(AppSettings(city, language, autoListen, wakeWord)) },
+                onClick = { onSave(AppSettings(city, language, autoListen, wakeWord, yandexKey, yandexFolder, speechRate)) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = city.isNotBlank(),
             ) {

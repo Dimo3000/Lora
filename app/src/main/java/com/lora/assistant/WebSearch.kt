@@ -1,10 +1,18 @@
 package com.lora.assistant
 
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Request
 import java.net.URLDecoder
 import java.util.concurrent.TimeUnit
+
+/** Ключ Яндекс Поиска из настроек (общий для всех поисков в приложении). */
+object SearchConfig {
+    @Volatile var yandexKey: String = ""
+    @Volatile var yandexFolder: String = ""
+}
 
 /** Обычный поиск в интернете без ключей: результаты DuckDuckGo (запасной вариант Bing) и тексты страниц. */
 class WebSearch {
@@ -18,9 +26,79 @@ class WebSearch {
         .build()
 
     fun search(query: String, limit: Int = 5): List<Hit> {
-        val hits = runCatching { duckDuckGo(query) }.getOrDefault(emptyList())
+        val hits = runCatching { yandex(query) }.getOrDefault(emptyList())
+            .ifEmpty { runCatching { duckDuckGo(query) }.getOrDefault(emptyList()) }
             .ifEmpty { runCatching { bing(query) }.getOrDefault(emptyList()) }
         return hits.take(limit)
+    }
+
+    /** Официальный Yandex Search API (Yandex Cloud): нужен ключ и идентификатор каталога. */
+    private fun yandex(query: String): List<Hit> {
+        val key = SearchConfig.yandexKey
+        val folder = SearchConfig.yandexFolder
+        if (key.isBlank() || folder.isBlank()) return emptyList()
+        val body = org.json.JSONObject()
+            .put("query", org.json.JSONObject().put("searchType", "SEARCH_TYPE_RU").put("queryText", query))
+            .put("folderId", folder)
+            .put("responseFormat", "FORMAT_XML")
+            .put("userAgent", "Lora/2.0")
+            .toString()
+        val request = Request.Builder().url("https://searchapi.api.cloud.yandex.net/v2/web/search")
+            .header("Authorization", "Api-Key $key")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        val raw = http.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) error("Yandex ${r.code}")
+            org.json.JSONObject(r.body?.string().orEmpty()).optString("rawData")
+        }
+        val xml = String(android.util.Base64.decode(raw, android.util.Base64.DEFAULT), Charsets.UTF_8)
+        return Regex("<doc[ >].*?</doc>", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { m ->
+            val doc = m.value
+            val url = Regex("<url>(.*?)</url>", RegexOption.DOT_MATCHES_ALL).find(doc)?.groupValues?.get(1)?.let(::clean) ?: return@mapNotNull null
+            val title = Regex("<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(doc)?.groupValues?.get(1)?.let(::clean).orEmpty()
+            val snippet = Regex("<passage>(.*?)</passage>", RegexOption.DOT_MATCHES_ALL).find(doc)?.groupValues?.get(1)?.let(::clean)
+                ?: Regex("<headline>(.*?)</headline>", RegexOption.DOT_MATCHES_ALL).find(doc)?.groupValues?.get(1)?.let(::clean).orEmpty()
+            Hit(title.ifBlank { url }, snippet, url)
+        }.toList()
+    }
+
+    /** Ищет на страницах результатов готовый рецепт (разметка schema.org/Recipe, она есть почти на всех кулинарных сайтах). */
+    fun recipe(hits: List<Hit>): RecipeCard? {
+        for (hit in hits.take(5)) {
+            val html = runCatching { get(hit.url, maxBytes = 800_000) }.getOrNull() ?: continue
+            for (m in Regex("<script[^>]+application/ld\\+json[^>]*>(.*?)</script>", RegexOption.DOT_MATCHES_ALL).findAll(html)) {
+                val json = runCatching { org.json.JSONTokener(m.groupValues[1].trim()).nextValue() }.getOrNull() ?: continue
+                val node = findRecipe(json) ?: continue
+                val ingredients = node.optJSONArray("recipeIngredient")?.let { a -> (0 until a.length()).map { clean(a.optString(it)) } }.orEmpty()
+                val steps = steps(node.opt("recipeInstructions"))
+                if (ingredients.isNotEmpty() && steps.isNotEmpty()) {
+                    return RecipeCard(clean(node.optString("name")).ifBlank { hit.title }, ingredients, steps, hit.url)
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findRecipe(node: Any?): org.json.JSONObject? = when (node) {
+        is org.json.JSONArray -> (0 until node.length()).firstNotNullOfOrNull { findRecipe(node.opt(it)) }
+        is org.json.JSONObject -> {
+            val type = node.opt("@type")
+            val isRecipe = (type is String && type == "Recipe") ||
+                (type is org.json.JSONArray && (0 until type.length()).any { type.optString(it) == "Recipe" })
+            if (isRecipe) node else findRecipe(node.opt("@graph"))
+        }
+        else -> null
+    }
+
+    private fun steps(node: Any?): List<String> = when (node) {
+        is String -> node.split(Regex("\\n+|(?<=\\.)\\s+(?=[А-ЯA-Z])")).map(::clean).filter { it.isNotBlank() }
+        is org.json.JSONArray -> (0 until node.length()).flatMap { steps(node.opt(it)) }
+        is org.json.JSONObject -> when {
+            node.has("itemListElement") -> steps(node.opt("itemListElement"))
+            node.has("text") -> listOf(clean(node.optString("text")))
+            else -> emptyList()
+        }
+        else -> emptyList()
     }
 
     /** Случайный свежий анекдот с anekdot.ru. */

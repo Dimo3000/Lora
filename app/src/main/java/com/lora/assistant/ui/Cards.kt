@@ -39,6 +39,7 @@ import com.lora.assistant.AudioPlayer
 import com.lora.assistant.Card
 import com.lora.assistant.GalleryCard
 import com.lora.assistant.LinkCard
+import com.lora.assistant.RecipeCard
 import com.lora.assistant.WeatherCard
 
 @Composable
@@ -48,6 +49,7 @@ fun CardView(card: Card) {
         is GalleryCard -> GalleryView(card)
         is AudioCard -> AudioView(card)
         is LinkCard -> LinkView(card)
+        is RecipeCard -> RecipeView(card)
     }
 }
 
@@ -172,6 +174,28 @@ private fun LinkView(card: LinkCard) {
                 Text(card.title, style = MaterialTheme.typography.titleSmall)
                 Text(card.subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+    }
+}
+
+@Composable
+private fun RecipeView(card: RecipeCard) {
+    val go = open(card.source)
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(card.title, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            Text("Ингредиенты", style = MaterialTheme.typography.labelLarge)
+            card.ingredients.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+            Spacer(Modifier.height(8.dp))
+            Text("Приготовление", style = MaterialTheme.typography.labelLarge)
+            card.steps.forEachIndexed { i, step -> Text("${i + 1}. $step", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Источник: " + card.source.substringAfter("://").substringBefore('/'),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.clickable { go() },
+            )
         }
     }
 }

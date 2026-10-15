@@ -34,7 +34,7 @@ class Rich {
             q.containsAny("фильм", "сериал", "мультфильм", "кинофильм") &&
                 q.containsAny("посоветуй", "подборк", "что посмотреть", "найди", "покажи", "порекомендуй", "лучшие", "топ ", "про ") -> Kind.MOVIES
             q.containsAny("картинк", "фото", "изображен", "покажи ") -> Kind.PICTURES
-            q.containsAny("рецепт", "как приготовить", "найди", "поищи", "где купить", "афиша", "расписание", "отзывы", "найти") -> Kind.SEARCH
+            q.containsAny("рецепт", "как приготовить", "как сделать", "найди", "поищи", "где купить", "афиша", "расписание", "отзывы", "найти") -> Kind.SEARCH
             else -> Kind.NONE
         }
     }
@@ -122,6 +122,13 @@ class Rich {
     )
 
     fun yandex(query: String) = LinkCard("Искать в Яндексе", query, "https://yandex.ru/search/?text=${enc(query)}")
+
+    /** Рецепт, найденный на кулинарном сайте. null — не нашли. */
+    fun recipe(question: String): RecipeCard? {
+        val query = subject(question, SEARCH_WORDS + setOf("рецепт", "рецепты", "как", "приготовить", "приготовь", "сделать")).ifBlank { question.trim() }
+        val hits = runCatching { web.search("$query рецепт с фото пошагово", 6) }.getOrDefault(emptyList())
+        return runCatching { web.recipe(hits) }.getOrNull()
+    }
 
     /** Прямой результат поиска: несколько ссылок с описанием, без пересказа. */
     fun search(question: String): List<Card> {
