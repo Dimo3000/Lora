@@ -27,11 +27,14 @@ class SpeechController(private val context: Context, private val listener: Liste
         fun onSoundLevel(level: Float)
         fun onSpeakingDone()
         fun onWakeWord()
+
+        /** Отпечаток голоса последней фразы (только встроенное распознавание). null — не удалось получить. */
+        fun onSpeakerVector(vector: DoubleArray?, frames: Int) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
-    private val vosk = VoskRecognizer(context, listener)
+    val vosk = VoskRecognizer(context, listener)
     private val piper = PiperVoice(context)
     private val wake = WakeWordDetector { listener.onWakeWord() }
     @Volatile private var systemSession = 0

@@ -50,6 +50,9 @@ fun SettingsScreen(
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
+    voices: List<String>,
+    onEnrollVoice: (String) -> Unit,
+    onRemoveVoice: (String) -> Unit,
 ) {
     var city by rememberSaveable { mutableStateOf(initial.city) }
     var language by rememberSaveable { mutableStateOf(initial.language) }
@@ -124,6 +127,9 @@ fun SettingsScreen(
                 Switch(checked = autoListen, onCheckedChange = { autoListen = it })
             }
 
+            Spacer(Modifier.height(8.dp))
+            VoicesSection(voices, onEnrollVoice, onRemoveVoice)
+
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = { onSave(AppSettings(city, language, autoListen, wakeWord)) },
@@ -134,6 +140,38 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+/** Голоса семьи: Лора запоминает, кто говорит, и обращается по имени. */
+@Composable
+private fun VoicesSection(voices: List<String>, onEnroll: (String) -> Unit, onRemove: (String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    Text("Голоса семьи", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Назовите имя и нажмите «Запомнить голос»: Лора попросит сказать три фразы. Потом она будет узнавать этого человека " +
+            "и обращаться к нему по имени. Работает с встроенным распознаванием и не идеально: похожие голоса (например, мама и дочь) " +
+            "она может путать. Голоса хранятся только на телефоне.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    voices.forEach { v ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(v, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            OutlinedButton(onClick = { onRemove(v) }) { Text("Забыть") }
+        }
+    }
+    OutlinedTextField(
+        value = name,
+        onValueChange = { name = it },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text("Имя, например Маша") },
+    )
+    Button(
+        onClick = { onEnroll(name.trim()); name = "" },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = name.isNotBlank(),
+    ) { Text("Запомнить голос") }
 }
 
 /** Блок про «разум» Лоры: нейросеть, которая работает прямо на телефоне. */

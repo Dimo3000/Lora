@@ -130,7 +130,7 @@ class LocalLlm(private val context: Context) {
     }
 
     /** Отвечает потоком кусочков текста. Контекст разговора сохраняется между вопросами. */
-    fun chat(userText: String, webContext: String? = null): Flow<String> = flow {
+    fun chat(userText: String, webContext: String? = null, speaker: String? = null): Flow<String> = flow {
         if (engine == null) throw IOException("Нейросеть ещё не загружена.")
         if (history.sumOf { it.second.length } > MAX_HISTORY_CHARS) {
             // Разговор стал длинным: начинаем заново, оставив только последние реплики.
@@ -144,7 +144,8 @@ class LocalLlm(private val context: Context) {
         val answer = StringBuilder()
         val prompt = if (webContext == null) userText else
             "$webContext\nИспользуй эти данные, если они подходят. Для подборки назови 3–5 вариантов с короткими пояснениями простыми предложениями, без списков и ссылок.\n\nВопрос: $userText"
-        conv.sendMessageAsync(prompt).collect { chunk ->
+        val who = speaker?.let { "(Сейчас с тобой говорит $it. Иногда называй собеседника по имени, но не в каждой фразе.)\n" }.orEmpty()
+        conv.sendMessageAsync(who + prompt).collect { chunk ->
             val text = chunk.toString()
             answer.append(text)
             emit(text)

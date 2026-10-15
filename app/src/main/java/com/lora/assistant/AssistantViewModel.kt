@@ -36,7 +36,11 @@ data class UiState(
     val systemRecognizerRequest: Long = 0L,
     /** Приложение на экране: имя «Лора» слушаем только пока оно открыто. */
     val foreground: Boolean = false,
+    /** Запомненные голоса семьи. */
+    val voices: List<String> = emptyList(),
 )
+
+private class Enroll(val name: String, var done: Int = 0, var fails: Int = 0)
 
 class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechController.Listener {
 
@@ -48,8 +52,13 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     private var askJob: Job? = null
     private var downloadJob: Job? = null
     private var nextId = 0L
+    private val profiles = VoiceProfiles(app)
+    private var pendingVector: DoubleArray? = null
+    private var pendingFrames = 0
+    private var speaker: String? = null
+    private var enroll: Enroll? = null
 
-    private val _state = MutableStateFlow(UiState(settings = store.load()))
+    private val _state = MutableStateFlow(UiState(settings = store.load(), voices = profiles.names()))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private val settings get() = _state.value.settings
@@ -216,7 +225,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
                     live != null -> deliver(live, listOfNotNull(answerer.takeCard()))
                     cards.isNotEmpty() && _state.value.llm != LlmState.Ready -> deliver(introFor(kind), cards)
                     _state.value.llm == LlmState.Ready -> chatWithLlm(question, cards)
-                    else -> deliver(answerer.answer(question, settings.language, settings.city))
+                    else -> deliver(greetByName(question, answerer.answer(question, settings.language, settings.city)))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -234,6 +243,15 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     }
 
     /** Нейросеть отвечает потоком: текст появляется на экране, а готовые предложения сразу озвучиваются. */
+    /** Без нейросети обращаемся по имени в ответ на приветствие. */
+    private fun greetByName(question: String, answer: String): String {
+        val name = speaker ?: return answer
+        val q = question.lowercase()
+        return if (q.startsWith("привет") || q.startsWith("здравствуй") || q.startsWith("добрый") || q.startsWith("доброе")) {
+            "$name, ${answer.replaceFirstChar { it.lowercase() }}"
+        } else answer
+    }
+
     private fun introFor(kind: Rich.Kind) = when (kind) {
         Rich.Kind.PICTURES -> "Вот что нашла."
         Rich.Kind.VIDEO -> "Нашла видео, нажмите на превью."
@@ -243,17 +261,24 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
 
     /** «Включи симфонию»: ищем свободную запись и сразу запускаем, без голоса поверх музыки. */
     private suspend fun playMusic(question: String) {
-        val track = if (!rich.isFreeMusicRequest(question)) null
-        else withContext(Dispatchers.IO) { runCatching { rich.audio(question) }.getOrNull() }
+        val free = rich.isFreeMusicRequest(question)
+        val track = if (free) withContext(Dispatchers.IO) { runCatching { rich.audio(question) }.getOrNull() } else null
         if (track != null) {
             addMessage(Role.ASSISTANT, "Включаю: ${track.title}", listOf(track))
             AudioPlayer.play(track.url)
+            finishTurn()
+            return
+        }
+        val query = rich.musicQuery(question)
+        val app = MusicApps.play(getApplication(), query)
+        if (app != null) {
+            addMessage(Role.ASSISTANT, "Включаю в $app: $query", rich.musicLinks(query))
             finishTurn()
         } else {
             deliver(
                 "Современную музыку сама проиграть не могу, у неё авторские права. " +
                     "Выберите, где открыть: нажмите на сервис, поиск уже введён.",
-                rich.musicLinks(question.trim()),
+                rich.musicLinks(query),
             )
         }
     }
@@ -289,7 +314,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         }
 
         try {
-            llm.chat(question, web).collect { chunk ->
+            llm.chat(question, web, speaker).collect { chunk ->
                 shown += chunk
                 pending.append(chunk)
                 _state.update { st ->
@@ -325,6 +350,10 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     /** Ход закончен: возвращаемся в ожидание имени или в покой. */
     private fun finishTurn() {
         setPhase(Phase.IDLE)
+        if (enroll != null) {
+            startListening()
+            return
+        }
         if (settings.autoListen && !settings.wakeWord) startListening() else resumeWake()
     }
 
@@ -358,10 +387,85 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
 
     override fun onPartialResult(text: String) = _state.update { it.copy(partialText = text) }
 
-    override fun onFinalResult(text: String) = ask(text)
+    override fun onSpeakerVector(vector: DoubleArray?, frames: Int) {
+        pendingVector = vector
+        pendingFrames = frames
+    }
+
+    override fun onFinalResult(text: String) {
+        val vector = pendingVector?.takeIf { pendingFrames >= VoiceProfiles.MIN_FRAMES }
+        pendingVector = null
+        if (enroll != null) {
+            handleEnrollment(vector)
+            return
+        }
+        speaker = vector?.let { profiles.identify(it) } ?: speaker.takeIf { vector == null }
+        ask(text)
+    }
+
+    /** Запоминание голоса: просим три фразы подряд и сохраняем отпечаток каждой. */
+    fun startEnroll(name: String) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        if (!settings.language.startsWith("ru") || !speech.vosk.isBundled) {
+            addMessage(Role.ERROR, "Для запоминания голоса нужно встроенное русское распознавание.")
+            return
+        }
+        speech.stopSpeaking()
+        profiles.remove(clean)
+        enroll = Enroll(clean)
+        val text = "Запоминаю голос: $clean. Скажите любую фразу подлиннее, всего нужно три."
+        addMessage(Role.ASSISTANT, text)
+        if (speech.speak(text, settings.language)) setPhase(Phase.SPEAKING) else finishTurn()
+    }
+
+    fun removeVoice(name: String) {
+        profiles.remove(name)
+        if (speaker == name) speaker = null
+        _state.update { it.copy(voices = profiles.names()) }
+    }
+
+    private fun handleEnrollment(vector: DoubleArray?) {
+        val e = enroll ?: return
+        val text: String
+        if (vector == null) {
+            e.fails++
+            if (e.fails >= 4) {
+                enroll = null
+                addMessage(Role.ERROR, "Не получилось записать голос. Скажите фразу подлиннее и в тишине, потом попробуйте снова.")
+                finishTurn()
+                return
+            }
+            text = "Не получилось, скажите фразу подлиннее."
+        } else {
+            profiles.add(e.name, vector)
+            e.done++
+            if (e.done >= VoiceProfiles.SAMPLES_NEEDED) {
+                enroll = null
+                _state.update { it.copy(voices = profiles.names()) }
+                val done = "Готово, теперь я узнаю ${e.name} по голосу."
+                addMessage(Role.ASSISTANT, done)
+                if (speech.speak(done, settings.language)) setPhase(Phase.SPEAKING) else finishTurn()
+                return
+            }
+            text = "Записала ${e.done} из ${VoiceProfiles.SAMPLES_NEEDED}. Теперь ещё фразу."
+        }
+        addMessage(Role.ASSISTANT, text)
+        if (speech.speak(text, settings.language)) setPhase(Phase.SPEAKING) else finishTurn()
+    }
 
     override fun onListenError(message: String) {
         if (_state.value.phase != Phase.LISTENING) return
+        enroll?.let { e ->
+            e.fails++
+            if (e.fails >= 4) {
+                enroll = null
+                _state.update { it.copy(phase = Phase.IDLE, partialText = "", soundLevel = 0f) }
+                addMessage(Role.ERROR, "Не получилось записать голос: $message")
+                finishTurn()
+                return
+            }
+        }
         _state.update { it.copy(phase = Phase.IDLE, partialText = "", soundLevel = 0f) }
         // В режиме имени не засоряем чат ошибками «не расслышала»: просто ждём дальше.
         if (!settings.wakeWord) addMessage(Role.ERROR, message)

@@ -162,6 +162,9 @@ class Rich {
 
     // ---------- Разбор запроса ----------
 
+    fun musicQuery(question: String): String =
+        subject(question, AUDIO_WORDS + setOf("музыку", "музыка", "песни", "песню", "треки", "что-нибудь")).ifBlank { question.trim() }
+
     private fun subject(question: String, stop: Set<String>): String =
         question.lowercase(Locale.ROOT).replace(Regex("[?!.,«»\"]"), " ").split(" ")
             .filter { it.isNotBlank() && it !in stop && it !in COMMON_STOP }

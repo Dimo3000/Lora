@@ -67,6 +67,13 @@ class MainActivity : ComponentActivity() {
                         onDownloadModel = viewModel::downloadModel,
                         onCancelDownload = viewModel::cancelDownload,
                         onDeleteModel = viewModel::deleteModel,
+                        voices = state.voices,
+                        onEnrollVoice = {
+                            showSettings = false
+                            ensureMicPermission()
+                            viewModel.startEnroll(it)
+                        },
+                        onRemoveVoice = viewModel::removeVoice,
                     )
                 } else {
                     MainScreen(

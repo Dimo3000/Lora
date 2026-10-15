@@ -15,6 +15,12 @@
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+        </intent>
+        <package android:name="ru.yandex.music" />
+        <package android:name="com.uma.musicvk" />
+        <package android:name="com.google.android.apps.youtube.music" />
     </queries>
 
     <application
