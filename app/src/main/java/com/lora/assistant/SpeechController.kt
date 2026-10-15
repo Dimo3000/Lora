@@ -283,6 +283,11 @@ class SpeechController(private val context: Context, private val listener: Liste
             .replace(Regex("https?://\\S+"), "")
             .replace(Regex("[*_`#>|]+"), "")
             .replace(Regex("(?m)^\\s*[-•]\\s+"), "")
+            .replace("т.д.", "так далее").replace("т.е.", "то есть").replace("т.п.", "тому подобное")
+            .replace("°C", " градусов").replace("°", " градусов").replace("%", " процентов").replace("м/с", "метров в секунду")
+            .replace(Regex("\\s*[—–]\\s*"), ", ")
+            .replace(Regex("[()«»\"]"), "")
+            .replace(Regex("[\\p{So}\\p{Cs}\\uFE0F]"), "") // эмодзи
             .replace(Regex("[ \\t]+"), " ")
             .trim()
 

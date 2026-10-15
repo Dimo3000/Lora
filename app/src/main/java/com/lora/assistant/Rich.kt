@@ -14,7 +14,9 @@ import java.util.concurrent.TimeUnit
  */
 class Rich {
 
-    enum class Kind { NONE, AUDIO, PICTURES, VIDEO, MOVIES }
+    enum class Kind { NONE, AUDIO, PICTURES, VIDEO, MOVIES, SEARCH }
+
+    private val web = WebSearch()
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -32,6 +34,7 @@ class Rich {
             q.containsAny("фильм", "сериал", "мультфильм", "кинофильм") &&
                 q.containsAny("посоветуй", "подборк", "что посмотреть", "найди", "покажи", "порекомендуй", "лучшие", "топ ", "про ") -> Kind.MOVIES
             q.containsAny("картинк", "фото", "изображен", "покажи ") -> Kind.PICTURES
+            q.containsAny("рецепт", "как приготовить", "найди", "поищи", "где купить", "афиша", "расписание", "отзывы", "найти") -> Kind.SEARCH
             else -> Kind.NONE
         }
     }
@@ -120,6 +123,15 @@ class Rich {
 
     fun yandex(query: String) = LinkCard("Искать в Яндексе", query, "https://yandex.ru/search/?text=${enc(query)}")
 
+    /** Прямой результат поиска: несколько ссылок с описанием, без пересказа. */
+    fun search(question: String): List<Card> {
+        val query = subject(question, SEARCH_WORDS).ifBlank { question.trim() }
+        val hits = runCatching { web.search(query, 4) }.getOrDefault(emptyList())
+        val cards = hits.map { LinkCard(it.title, it.snippet.take(140), it.url) }.toMutableList<Card>()
+        cards += yandex(query)
+        return cards
+    }
+
     fun youtube(query: String, title: String = "Искать в YouTube") =
         LinkCard(title, query, "https://www.youtube.com/results?search_query=" + URLEncoder.encode(query, "UTF-8"))
 
@@ -183,6 +195,7 @@ class Rich {
         val AUDIO_WORDS = setOf("включи", "поставь", "сыграй", "запусти", "проиграй", "послушать", "послушаем", "хочу", "музыку", "музыка", "песню", "песня")
         val PICTURE_WORDS = setOf("покажи", "картинку", "картинки", "фото", "фотографию", "фотографии", "изображение", "изображения", "найди", "как", "выглядит")
         val VIDEO_WORDS = setOf("покажи", "видео", "ролик", "трейлер", "клип", "найди", "включи", "поставь")
+        val SEARCH_WORDS = setOf("найди", "поищи", "найти", "мне", "пожалуйста", "покажи")
         val MOVIE_WORDS = setOf("посоветуй", "порекомендуй", "подборку", "подборка", "найди", "покажи", "что", "посмотреть", "хороший", "фильм", "фильмы", "сериал", "сериалы", "мультфильм", "мультфильмы", "кино", "лучшие", "топ", "про")
         // Названия на Викискладе в основном английские.
         val RU_TO_EN = listOf(

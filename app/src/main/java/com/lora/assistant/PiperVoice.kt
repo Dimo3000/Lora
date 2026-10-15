@@ -109,12 +109,28 @@ class PiperVoice(private val context: Context) {
                 while (true) {
                     val text = queue.take()
                     if (text == END || cancelled) break
-                    val audio = engine.generate(text, 0, 1.0f)
+                    // Живая интонация: вопрос чуть медленнее, восклицание бодрее, после фразы небольшая пауза.
+                    val trimmed = text.trimEnd()
+                    val speed = when {
+                        trimmed.endsWith("?") -> 0.96f
+                        trimmed.endsWith("!") -> 1.04f
+                        else -> 1.0f
+                    }
+                    val audio = engine.generate(text, 0, speed)
                     if (cancelled) break
                     if (audio.samples.isEmpty()) continue
                     val t = track ?: createTrack(audio.sampleRate).also { track = it; it.play() }
                     t.write(audio.samples, 0, audio.samples.size, AudioTrack.WRITE_BLOCKING)
                     frames += audio.samples.size
+                    val pauseSeconds = when {
+                        trimmed.endsWith("?") -> 0.35f
+                        trimmed.endsWith(".") || trimmed.endsWith("…") -> 0.3f
+                        trimmed.endsWith("!") -> 0.25f
+                        else -> 0.18f
+                    }
+                    val pause = FloatArray((audio.sampleRate * pauseSeconds).toInt())
+                    t.write(pause, 0, pause.size, AudioTrack.WRITE_BLOCKING)
+                    frames += pause.size
                 }
                 val t = track
                 if (t != null && !cancelled) {

@@ -226,13 +226,14 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
                         Rich.Kind.PICTURES -> listOfNotNull(rich.pictures(question))
                         Rich.Kind.VIDEO -> rich.video(question)
                         Rich.Kind.MOVIES -> rich.movies(question)
+                        Rich.Kind.SEARCH -> rich.search(question)
                         else -> if (answerer.needsWeb(question)) listOf(rich.yandex(question)) else emptyList()
                     }
                 }
                 val live = answerer.answerLive(question, settings.language, settings.city)
                 when {
                     live != null -> deliver(live, listOfNotNull(answerer.takeCard()))
-                    cards.isNotEmpty() && _state.value.llm != LlmState.Ready -> deliver(introFor(kind), cards)
+                    cards.isNotEmpty() -> deliver(introFor(kind, question), cards)
                     _state.value.llm == LlmState.Ready -> chatWithLlm(question, cards)
                     else -> deliver(greetByName(question, answerer.answer(question, settings.language, settings.city)))
                 }
@@ -303,7 +304,9 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         } else answer
     }
 
-    private fun introFor(kind: Rich.Kind) = when (kind) {
+    private fun introFor(kind: Rich.Kind, question: String = "") = when (kind) {
+        Rich.Kind.SEARCH ->
+            if (question.lowercase().contains("рецепт")) "Нашла рецепты. Нажмите на нужный." else "Вот что нашла. Нажмите на нужный результат."
         Rich.Kind.PICTURES -> "Вот что нашла."
         Rich.Kind.VIDEO -> "Нашла видео, нажмите на превью."
         Rich.Kind.MOVIES -> "Вот несколько фильмов, нажмите на афишу, чтобы узнать подробнее."
