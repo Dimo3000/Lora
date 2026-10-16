@@ -12,6 +12,8 @@ import java.util.concurrent.TimeUnit
 object SearchConfig {
     @Volatile var yandexKey: String = ""
     @Volatile var yandexFolder: String = ""
+    /** Использовать Yandex SpeechKit для распознавания и голоса (если задан ключ). */
+    @Volatile var cloudSpeech: Boolean = true
 }
 
 /** Обычный поиск в интернете без ключей: результаты DuckDuckGo (запасной вариант Bing) и тексты страниц. */

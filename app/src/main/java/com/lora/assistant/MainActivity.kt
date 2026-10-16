@@ -67,6 +67,10 @@ class MainActivity : ComponentActivity() {
                         onDownloadModel = viewModel::downloadModel,
                         onCancelDownload = viewModel::cancelDownload,
                         onDeleteModel = viewModel::deleteModel,
+                        asr = state.asr,
+                        onDownloadAsr = viewModel::downloadAsr,
+                        onCancelAsr = viewModel::cancelAsr,
+                        onDeleteAsr = viewModel::deleteAsr,
                         voices = state.voices,
                         onEnrollVoice = {
                             showSettings = false

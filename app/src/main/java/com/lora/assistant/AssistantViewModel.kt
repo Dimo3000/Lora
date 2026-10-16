@@ -38,6 +38,8 @@ data class UiState(
     val foreground: Boolean = false,
     /** Запомненные голоса семьи. */
     val voices: List<String> = emptyList(),
+    /** Состояние мощной офлайн-модели распознавания речи (GigaAM). */
+    val asr: LlmState = LlmState.Missing,
 )
 
 private class Enroll(val name: String, var done: Int = 0, var fails: Int = 0)
@@ -72,6 +74,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         llm.city = settings.city
         applyRuntimeSettings()
         if (llm.isDownloaded()) loadLlm()
+        if (giga.isDownloaded()) loadAsr()
     }
 
     // ---------- Кнопки интерфейса ----------
@@ -109,6 +112,7 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
     private fun applyRuntimeSettings() {
         SearchConfig.yandexKey = settings.yandexKey
         SearchConfig.yandexFolder = settings.yandexFolder
+        SearchConfig.cloudSpeech = settings.cloudSpeech
         speech.speechRate = settings.speechRate
     }
 
@@ -182,6 +186,51 @@ class AssistantViewModel(app: Application) : AndroidViewModel(app), SpeechContro
         downloadJob?.cancel()
         llm.deleteModel()
         _state.update { it.copy(llm = LlmState.Missing) }
+    }
+
+    // ---------- Мощное офлайн-распознавание (GigaAM) ----------
+
+    private val giga get() = speech.betterAsr.giga
+    private var asrJob: Job? = null
+
+    fun downloadAsr() {
+        if (asrJob?.isActive == true) return
+        asrJob = viewModelScope.launch {
+            _state.update { it.copy(asr = LlmState.Downloading(giga.partialBytes(), GigaAm.MODEL_BYTES_APPROX)) }
+            try {
+                giga.download { done, total ->
+                    _state.update { it.copy(asr = LlmState.Downloading(done, if (total > 0) total else GigaAm.MODEL_BYTES_APPROX)) }
+                }
+                loadAsr()
+            } catch (e: CancellationException) {
+                _state.update { it.copy(asr = LlmState.Missing) }
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(asr = LlmState.Failed(e.message ?: "Не удалось скачать модель.")) }
+            }
+        }
+    }
+
+    fun cancelAsr() {
+        asrJob?.cancel()
+    }
+
+    fun deleteAsr() {
+        asrJob?.cancel()
+        giga.delete()
+        _state.update { it.copy(asr = LlmState.Missing) }
+    }
+
+    private fun loadAsr() {
+        _state.update { it.copy(asr = LlmState.Loading) }
+        viewModelScope.launch {
+            try {
+                giga.load()
+                _state.update { it.copy(asr = LlmState.Ready) }
+            } catch (e: Throwable) {
+                _state.update { it.copy(asr = LlmState.Failed("Не удалось запустить распознавание: ${e.message}")) }
+            }
+        }
     }
 
     private fun loadLlm() {

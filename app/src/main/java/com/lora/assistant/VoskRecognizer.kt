@@ -32,6 +32,9 @@ class VoskRecognizer(private val context: Context, private val listener: SpeechC
     /** Загруженная модель; её же использует детектор имени «Лора». */
     val loadedModel: Model? get() = model
 
+    /** Модель отпечатка голоса (если загрузилась). */
+    val speaker: SpeakerModel? get() = speakerModel
+
     init {
         val hasSpeaker = runCatching { context.assets.list(SPK_DIR)?.isNotEmpty() == true }.getOrDefault(false)
         if (hasSpeaker) {

@@ -13,6 +13,8 @@ data class AppSettings(
     /** Яндекс Поиск по API (необязательно): ключ и идентификатор каталога из Yandex Cloud. */
     val yandexKey: String = "",
     val yandexFolder: String = "",
+    /** Облачные голос и распознавание Яндекс SpeechKit, если задан ключ. */
+    val cloudSpeech: Boolean = true,
     /** Скорость речи: 0.8 медленнее, 1.2 быстрее. */
     val speechRate: Float = 1.0f,
 ) {
@@ -35,6 +37,7 @@ class SettingsStore(context: Context) {
         wakeWord = prefs.getBoolean("wake_word", false),
         yandexKey = prefs.getString("yandex_key", "") ?: "",
         yandexFolder = prefs.getString("yandex_folder", "") ?: "",
+        cloudSpeech = prefs.getBoolean("cloud_speech", true),
         speechRate = prefs.getFloat("speech_rate", 1.0f),
     )
 
@@ -46,6 +49,7 @@ class SettingsStore(context: Context) {
             .putBoolean("wake_word", settings.wakeWord)
             .putString("yandex_key", settings.yandexKey.trim())
             .putString("yandex_folder", settings.yandexFolder.trim())
+            .putBoolean("cloud_speech", settings.cloudSpeech)
             .putFloat("speech_rate", settings.speechRate)
             .apply()
     }

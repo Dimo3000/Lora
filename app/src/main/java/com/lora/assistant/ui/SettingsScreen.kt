@@ -51,6 +51,10 @@ fun SettingsScreen(
     onDownloadModel: () -> Unit,
     onCancelDownload: () -> Unit,
     onDeleteModel: () -> Unit,
+    asr: LlmState,
+    onDownloadAsr: () -> Unit,
+    onCancelAsr: () -> Unit,
+    onDeleteAsr: () -> Unit,
     voices: List<String>,
     onEnrollVoice: (String) -> Unit,
     onRemoveVoice: (String) -> Unit,
@@ -62,6 +66,7 @@ fun SettingsScreen(
     var yandexKey by rememberSaveable { mutableStateOf(initial.yandexKey) }
     var yandexFolder by rememberSaveable { mutableStateOf(initial.yandexFolder) }
     var speechRate by rememberSaveable { mutableStateOf(initial.speechRate) }
+    var cloudSpeech by rememberSaveable { mutableStateOf(initial.cloudSpeech) }
 
     Scaffold(
         topBar = {
@@ -85,6 +90,9 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             BrainSection(llm, onDownloadModel, onCancelDownload, onDeleteModel)
+
+            Spacer(Modifier.height(8.dp))
+            AsrSection(asr, onDownloadAsr, onCancelAsr, onDeleteAsr)
 
             Spacer(Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -155,18 +163,60 @@ fun SettingsScreen(
                 singleLine = true, label = { Text("API-ключ") })
             OutlinedTextField(value = yandexFolder, onValueChange = { yandexFolder = it }, modifier = Modifier.fillMaxWidth(),
                 singleLine = true, label = { Text("Идентификатор каталога") })
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Яндекс SpeechKit: голос и распознавание", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "С ключом Лора говорит голосом Яндекса и распознаёт речь через Яндекс (платно, нужен интернет). " +
+                            "У ключа должны быть роли ai.speechkit-tts.user и ai.speechkit-stt.user. Если сервис недоступен, работает офлайн.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = cloudSpeech, onCheckedChange = { cloudSpeech = it })
+            }
 
             Spacer(Modifier.height(8.dp))
             VoicesSection(voices, onEnrollVoice, onRemoveVoice)
 
             Spacer(Modifier.height(16.dp))
             Button(
-                onClick = { onSave(AppSettings(city, language, autoListen, wakeWord, yandexKey, yandexFolder, speechRate)) },
+                onClick = { onSave(AppSettings(city, language, autoListen, wakeWord, yandexKey, yandexFolder, cloudSpeech, speechRate)) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = city.isNotBlank(),
             ) {
                 Text("Сохранить")
             }
+        }
+    }
+}
+
+/** Мощная офлайн-модель распознавания русской речи. */
+@Composable
+private fun AsrSection(asr: LlmState, onDownload: () -> Unit, onCancel: () -> Unit, onDelete: () -> Unit) {
+    Text("Точное распознавание речи", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Модель GigaAM для русского языка работает прямо на телефоне, без интернета и ключей, и понимает речь заметно лучше " +
+            "встроенной маленькой. Скачивается один раз, около 230 МБ (лучше по Wi-Fi).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    when (asr) {
+        LlmState.Missing -> Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Скачать точное распознавание (230 МБ)") }
+        is LlmState.Downloading -> {
+            val fraction = (asr.doneBytes.toFloat() / asr.totalBytes.coerceAtLeast(1)).coerceIn(0f, 1f)
+            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+            Text("Скачано ${asr.doneBytes / 1_000_000} из ${asr.totalBytes / 1_000_000} МБ", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Пауза") }
+        }
+        LlmState.Loading -> Text("Загружаю в память…", style = MaterialTheme.typography.bodyMedium)
+        LlmState.Ready -> {
+            Text("Готово: Лора распознаёт речь точнее.", style = MaterialTheme.typography.bodyMedium)
+            OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Удалить модель") }
+        }
+        is LlmState.Failed -> {
+            Text(asr.message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Попробовать ещё раз") }
         }
     }
 }

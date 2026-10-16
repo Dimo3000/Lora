@@ -11,7 +11,7 @@ JNI=app/src/main/jniLibs/arm64-v8a
 KT=app/src/main/java/com/k2fsa/sherpa/onnx
 VOICE=app/src/main/assets/voice-ru
 
-if [ -f "$VOICE/tokens.txt" ] && [ -f "$JNI/libsherpa-onnx-jni.so" ] && [ -f "$KT/Tts.kt" ]; then
+if [ -f "$VOICE/tokens.txt" ] && [ -f "$JNI/libsherpa-onnx-jni.so" ] && [ -f "$KT/Tts.kt" ] && [ -f app/src/main/assets/vad/silero_vad.onnx ]; then
   echo "Голос и библиотеки уже на месте."
   exit 0
 fi
@@ -33,10 +33,18 @@ SRC=$(find "$TMP/android" -type d -path '*jniLibs/arm64-v8a' | head -1)
 rm -rf "$JNI" && mkdir -p "$JNI" && cp "$SRC"/*.so "$JNI"/
 ls -la "$JNI"
 
-# 2) Kotlin-обёртка
+# 2) Kotlin-обёртка: весь каталог kotlin-api (синтез речи, распознавание, детектор речи)
 mkdir -p "$KT"
-curl -fL --retry 3 -o "$KT/Tts.kt" "https://raw.githubusercontent.com/$REPO/$TAG/sherpa-onnx/kotlin-api/Tts.kt"
-head -20 "$KT/Tts.kt"
+rm -f "$KT"/*.kt
+for f in $(api "repos/$REPO/contents/sherpa-onnx/kotlin-api?ref=$TAG" | jq -r '.[].name' | grep -E '\.kt$'); do
+  curl -fL --retry 3 -o "$KT/$f" "https://raw.githubusercontent.com/$REPO/$TAG/sherpa-onnx/kotlin-api/$f"
+done
+ls "$KT"
+
+# 2b) детектор речи Silero (около 2 МБ) для определения конца фразы
+mkdir -p app/src/main/assets/vad
+curl -fL --retry 3 -o app/src/main/assets/vad/silero_vad.onnx "https://github.com/$REPO/releases/download/asr-models/silero_vad.onnx"
+ls -la app/src/main/assets/vad
 
 # 3) голос «Ирина»
 NAME=$(api repos/$REPO/releases/tags/tts-models | jq -r '.assets[].name' | grep -E '^vits-piper-ru_RU-irina-.*\.tar\.bz2$' | sort | tail -1)

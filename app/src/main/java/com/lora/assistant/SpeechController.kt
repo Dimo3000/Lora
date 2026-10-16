@@ -36,11 +36,17 @@ class SpeechController(private val context: Context, private val listener: Liste
     private var recognizer: SpeechRecognizer? = null
     val vosk = VoskRecognizer(context, listener)
     private val piper = PiperVoice(context)
+    private val yandex = YandexVoice()
+    val betterAsr = BetterAsr(context)
+    private val hybrid = HybridRecognizer(listener, vosk, betterAsr)
+    private var usingHybrid = false
+    private var yandexActive = false
+    private val sessionSentences = mutableListOf<String>()
 
     /** Скорость речи из настроек. */
     var speechRate: Float
         get() = piper.rate
-        set(value) { piper.rate = value }
+        set(value) { piper.rate = value; yandex.rate = value }
     private val wake = WakeWordDetector { listener.onWakeWord() }
     @Volatile private var systemSession = 0
     private var pendingUtterances = 0
@@ -99,7 +105,8 @@ class SpeechController(private val context: Context, private val listener: Liste
         stopSpeaking()
         activeEngine = backgroundEngine(language)
         if (activeEngine == Engine.VOSK) {
-            vosk.start()
+            usingHybrid = betterAsr.available()
+            if (usingHybrid) hybrid.start() else vosk.start()
             return
         }
         val r = recognizer ?: createRecognizer(activeEngine).also {
@@ -126,10 +133,13 @@ class SpeechController(private val context: Context, private val listener: Liste
 
     /** Закончить слушать и распознать то, что уже сказано. */
     fun stopListening() {
-        if (activeEngine == Engine.VOSK) vosk.finish() else recognizer?.stopListening()
+        if (activeEngine == Engine.VOSK) {
+            if (usingHybrid) hybrid.finish() else vosk.finish()
+        } else recognizer?.stopListening()
     }
 
     fun cancelListening() {
+        hybrid.cancel()
         vosk.cancel()
         recognizer?.cancel()
     }
@@ -148,6 +158,16 @@ class SpeechController(private val context: Context, private val listener: Liste
         speechEnded = false
         pendingUtterances = 0
         val session = ++systemSession
+        sessionSentences.clear()
+        yandexActive = SpeechKit.configured && language.startsWith("ru")
+        if (yandexActive) {
+            piperActive = false
+            yandex.begin(
+                onFinished = { if (session == systemSession) listener.onSpeakingDone() },
+                onFailed = { spoken -> if (session == systemSession) fallbackToPiper(session, spoken) },
+            )
+            return true
+        }
         piperActive = piper.isReady && language.startsWith("ru")
         if (piperActive) {
             piper.begin { if (session == systemSession) listener.onSpeakingDone() }
@@ -165,6 +185,11 @@ class SpeechController(private val context: Context, private val listener: Liste
     fun speakChunk(text: String) {
         val clean = cleanForSpeech(text)
         if (clean.isBlank()) return
+        if (yandexActive) {
+            sessionSentences += clean
+            yandex.add(clean)
+            return
+        }
         if (piperActive) {
             piper.add(clean)
             return
@@ -177,7 +202,9 @@ class SpeechController(private val context: Context, private val listener: Liste
 
     fun endSpeech() {
         speechEnded = true
-        if (piperActive) {
+        if (yandexActive) {
+            yandex.end()
+        } else if (piperActive) {
             piper.end()
         } else if (pendingUtterances == 0) {
             main.post { listener.onSpeakingDone() }
@@ -192,8 +219,23 @@ class SpeechController(private val context: Context, private val listener: Liste
         return true
     }
 
+    /** Облачный голос не ответил: остаток реплики озвучиваем офлайн-голосом Piper. */
+    private fun fallbackToPiper(session: Int, spoken: Int) {
+        yandexActive = false
+        val rest = sessionSentences.drop(spoken)
+        if (!piper.isReady || rest.isEmpty()) {
+            listener.onSpeakingDone()
+            return
+        }
+        piperActive = true
+        piper.begin { if (session == systemSession) listener.onSpeakingDone() }
+        rest.forEach { piper.add(it) }
+        if (speechEnded) piper.end()
+    }
+
     fun stopSpeaking() {
         systemSession++
+        yandex.stop()
         piper.stop()
         if (ttsReady) tts.stop()
         pendingUtterances = 0
@@ -227,6 +269,9 @@ class SpeechController(private val context: Context, private val listener: Liste
     fun release() {
         wake.stop()
         vosk.release()
+        hybrid.cancel()
+        betterAsr.giga.release()
+        yandex.stop()
         piper.release()
         recognizer?.destroy()
         recognizer = null
